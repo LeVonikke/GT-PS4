@@ -1,0 +1,18 @@
+version: 1
+enabled: true
+model: claude-3-5-sonnet
+features:
+  code_review: true
+  commit_messages: true
+  pull_request_descriptions: true
+  issue_resolution: true
+  documentation: true
+rules:
+  - patterns:
+      - "**/*.cpp"
+      - "**/*.h"
+      - "**/*.hpp"
+      - "**/*.cc"
+    settings:
+      language: cpp
+      strict_mode: true
