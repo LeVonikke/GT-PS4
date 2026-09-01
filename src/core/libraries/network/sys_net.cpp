@@ -8,6 +8,7 @@
 #include "common/error.h"
 #include "common/singleton.h"
 #include "core/file_sys/fs.h"
+#include "net_epoll.h"
 #include "net_error.h"
 #include "sockets.h"
 #include "sys_net.h"
@@ -336,6 +337,22 @@ int PS4_SYSV_ABI sys_netabort(OrbisNetId s, int flags) {
 int PS4_SYSV_ABI sys_socketclose(OrbisNetId s) {
     auto file = FDTable::Instance()->GetSocket(s);
     if (!file) {
+        // GT7 (and presumably other titles) call this generic close on epoll ids too, not
+        // just sockets - real PS4/BSD close() works on any fd regardless of kind, since
+        // sockets and epolls share one fd namespace. We only checked the socket table, so
+        // this always errored for epoll ids, the game never freed them, and every retry of
+        // a failed connect (e.g. game-specific servers shadNet can't provide, unrelated to
+        // this bug) leaked one epoll forever - observed as fds climbing without bound and
+        // real memory going with them while GT7 kept retrying its own servers. Route to the
+        // epoll table too before giving up.
+        auto epoll_file = FDTable::Instance()->GetEpoll(s);
+        if (epoll_file) {
+            LOG_DEBUG(Lib_Net, "s = {} ({}) is an epoll, destroying it", s,
+                      epoll_file->epoll->name);
+            epoll_file->epoll->Destroy();
+            FDTable::Instance()->DeleteHandle(s);
+            return 0;
+        }
         *Libraries::Kernel::__Error() = ORBIS_NET_EBADF;
         LOG_ERROR(Lib_Net, "socket id is invalid = {}", s);
         return -1;

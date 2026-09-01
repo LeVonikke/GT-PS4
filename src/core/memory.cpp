@@ -986,6 +986,21 @@ u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma
     if (vma_type != VMAType::Reserved && vma_type != VMAType::PoolReserved) {
         // Unmap the memory region.
         impl.Unmap(virtual_addr, size_in_vma);
+        if (vma_type == VMAType::Direct) {
+            // EXPERIMENTAL (GT7 boot investigation, 2026-09-01): Unmap() above replaces the
+            // mapping with PROT_NONE anonymous memory, so any stray guest write to freshly
+            // freed direct memory raises SIGSEGV immediately. We've observed exactly that
+            // right after sceKernelReleaseDirectMemory while booting GT7 - same guest thread
+            // frees a direct-memory region and then writes into the middle of it a few
+            // instructions later. Real PS4 hardware evidently tolerates this (see the
+            // "protecting freed memory does nothing" comment in ProtectBytes above for a
+            // similar host/console semantics mismatch), so leave the region readable/
+            // writable instead of guard-paging it. A later legitimate remap at this same
+            // address (MAP_FIXED) still replaces it cleanly, so this shouldn't leak real
+            // bugs into "successful" runs - it only changes what happens to *stray*
+            // accesses that would otherwise crash outright.
+            impl.Protect(virtual_addr, size_in_vma, Core::MemoryPermission::ReadWrite);
+        }
         // Tracy memory tracking breaks from merging memory areas. Disabled for now.
         // TRACK_FREE(virtual_addr, "VMEM");
     }
