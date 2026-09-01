@@ -180,19 +180,32 @@ void ImageInfo::UpdateSize() {
             break;
         }
         case AmdGpu::ArrayMode::Array1DTiledThick:
+        case AmdGpu::ArrayMode::ArrayPrtTiledThick:
             thickness = 4;
             mip_d += (-mip_d) & (thickness - 1);
             [[fallthrough]];
-        case AmdGpu::ArrayMode::Array1DTiledThin1: {
+        case AmdGpu::ArrayMode::Array1DTiledThin1:
+        case AmdGpu::ArrayMode::ArrayPrtTiledThin1: {
+            // The PrtTiled* variants (Partially Resident Texture) share the exact same
+            // micro/macro-tile addressing as their non-Prt counterparts below - PRT only
+            // changes how the driver commits/maps pages for sparse residency, not the texel
+            // layout formula, so the size/pitch/height math is identical. Observed missing
+            // for ArrayPrt2DTiledThin1 while booting GT7's Music Rally (UNREACHABLE_MSG
+            // "Unknown array mode"); added the 1D/2D Thin1+Thick Prt siblings too since they
+            // follow the same reasoning, but left the 3D/XThick/Linear-general Prt variants
+            // alone - no confirmed case forcing them yet and less confidence they map this
+            // cleanly onto the existing helpers.
             std::tie(mip_info.pitch, mip_info.height, mip_info.size) =
                 ImageSizeMicroTiled(mip_w, mip_h, thickness, num_bits, num_samples);
             break;
         }
         case AmdGpu::ArrayMode::Array2DTiledThick:
+        case AmdGpu::ArrayMode::ArrayPrt2DTiledThick:
             thickness = 4;
             mip_d += (-mip_d) & (thickness - 1);
             [[fallthrough]];
-        case AmdGpu::ArrayMode::Array2DTiledThin1: {
+        case AmdGpu::ArrayMode::Array2DTiledThin1:
+        case AmdGpu::ArrayMode::ArrayPrt2DTiledThin1: {
             ASSERT(!props.is_block);
             std::tie(mip_info.pitch, mip_info.height, mip_info.size) = ImageSizeMacroTiled(
                 mip_w, mip_h, thickness, num_bits, num_samples, tile_mode, mip, alt_tile);

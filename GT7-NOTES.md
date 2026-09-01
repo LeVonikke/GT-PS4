@@ -186,17 +186,46 @@ lançado o shadps4 através do Claude Code):
    `ir.FPMin`/`ir.FPTrunc` (ambos já aceitam F64 no builder, não precisou mexer no IR).
    Commitado.
 
-2. **Ainda sem fix**: passado o shader, trava em outro lugar —
+2. **Modo de tiling PRT faltando — CORRIGIDO** —
 
        [Debug] <Critical> image_info.cpp:202 UpdateSize: Unreachable code!
        Unknown array mode ArrayPrt2DTiledThin1
 
-   Modo de tiling de textura da GPU (`ArrayPrt2DTiledThin1` — Partially Resident Texture,
-   feature avançada de AMDGPU) não tratado em `image_info.cpp`. Diferente do fix de opcode
-   (repetir um padrão já existente), esse aqui exige entender layout de memória de textura
-   tiled — não investigado, escopo bem maior. **Não tentar sem confirmar RAM livre e swap
-   baixo antes** — as duas vezes que essa trava aconteceu, o processo já estava passando de
-   4-10GB de RSS/shmem quando eu matei.
+   `image_info.cpp` (`ImageInfo::UpdateSize`) só tratava `Array1DTiledThin1/Thick` e
+   `Array2DTiledThin1/Thick` — nenhuma das 6 variantes `ArrayPrt*` (Partially Resident
+   Texture) do enum `AmdGpu::ArrayMode` (`src/video_core/amdgpu/tiling.h`). PRT só muda como
+   o driver comita páginas pra residência esparsa — o cálculo de pitch/height/size do texel é
+   idêntico ao modo não-PRT correspondente (confirmado: `tiling.cpp`, que já trata os 16
+   valores do enum sem lacuna, usa a mesma lógica de endereçamento pros dois). Adicionado
+   `ArrayPrtTiledThin1`/`ArrayPrtTiledThick` ao lado de `Array1DTiledThin1`/`Thick`
+   (micro-tiled) e `ArrayPrt2DTiledThin1`/`ArrayPrt2DTiledThick` ao lado de
+   `Array2DTiledThin1`/`Thick` (macro-tiled). **Não** mexi nas variantes 3D/XThick/Prt3D —
+   sem caso confirmado forçando elas ainda, e menos confiança de que mapeiam limpo nos
+   helpers existentes; deixei cair no `UNREACHABLE_MSG` se aparecer, que pelo menos avisa
+   claro em vez de arriscar tamanho de imagem errado silenciosamente. Commitado.
+
+3. **Ainda sem fix — mais arriscado que os dois de cima**:
+
+       [Debug] <Critical> vector_interpolation.cpp:101 V_INTERP_MOV_F32: Assertion Failed!
+
+   `ASSERT(attr.is_flat || inst.src[0].code == 2);` em
+   `src/shader_recompiler/frontend/translate/vector_interpolation.cpp:101` — o GT7 chama
+   `V_INTERP_MOV_F32` com `src[0].code` 0 ou 1 (P10/P20, os parâmetros de interpolação bruta)
+   numa attribute que não é flat, e o assert só permite isso pra code==2 (P0). Achado
+   interessante: o código *depois* do assert (`ir.GetAttribute(attrib, chan, (code+1) % 3)`)
+   parece já tratar os três valores de code corretamente via rotação — o assert pode ser só
+   defensivo/não testado contra esse padrão de uso, não uma limitação real. **Mas** essa é
+   uma hipótese, não confirmada — diferente dos dois fixes acima (que tinham uma
+   implementação irmã pra copiar exatamente), aqui não tem molde pronto, é código de
+   interpolação de shader que decide como a cor/textura fica na tela. Errar aqui não trava
+   limpo como um assert — pode **renderizar errado silenciosamente**, bem mais difícil de
+   perceber do que testar. Não tentei ainda; precisa de mais confiança antes de mexer,
+   idealmente comparando com o código-fonte real do driver AMD ou de outro emulador que já
+   trate esse padrão.
+
+**Nas três vezes que travou (as duas incluindo essa terceira), o processo comeu memória sem
+limite até precisar `kill -9`** — confirmar RAM livre e swap baixo antes de testar de novo,
+e não deixar rodando sem monitorar.
 
 ## DualSense por Bluetooth não pareia — pendente reboot
 
