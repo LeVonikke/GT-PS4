@@ -154,6 +154,8 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_CVT_F32_UBYTE(3, inst);
     case Opcode::V_FLOOR_F64:
         return V_FLOOR_F64(inst);
+    case Opcode::V_TRUNC_F64:
+        return V_TRUNC_F64(inst);
     case Opcode::V_FRACT_F32:
         return V_FRACT_F32(inst);
     case Opcode::V_TRUNC_F32:
@@ -446,6 +448,8 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_ALIGNBYTE_B32(inst);
     case Opcode::V_MUL_F64:
         return V_MUL_F64(inst);
+    case Opcode::V_MIN_F64:
+        return V_MIN_F64(inst);
     case Opcode::V_MAX_F64:
         return V_MAX_F64(inst);
     case Opcode::V_MUL_LO_U32:
@@ -991,6 +995,11 @@ void Translator::V_CVT_F32_UBYTE(u32 index, const GcnInst& inst) {
 void Translator::V_FLOOR_F64(const GcnInst& inst) {
     const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
     SetDst64(inst.dst[0], ir.FPFloor(src0));
+}
+
+void Translator::V_TRUNC_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    SetDst64(inst.dst[0], ir.FPTrunc(src0));
 }
 
 void Translator::V_FRACT_F32(const GcnInst& inst) {
@@ -1590,6 +1599,12 @@ void Translator::V_MUL_F64(const GcnInst& inst) {
     const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
     const IR::F64 src1{GetSrc64<IR::F64>(inst.src[1])};
     SetDst64(inst.dst[0], ir.FPMul(src0, src1));
+}
+
+void Translator::V_MIN_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    const IR::F64 src1{GetSrc64<IR::F64>(inst.src[1])};
+    SetDst64(inst.dst[0], ir.FPMin(src0, src1));
 }
 
 void Translator::V_MAX_F64(const GcnInst& inst) {

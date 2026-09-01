@@ -166,6 +166,38 @@ tentando. Fix aplicado, funcionando, não commitado ainda.
 `connected_to_network = false` de novo — evita o diálogo de erro e o loop de retry. Só
 ligar se for investigar servidor dedicado do GT7 especificamente.
 
+## Music Rally trava a GPU — CUIDADO, já derrubou o Claude Desktop por OOM duas vezes
+
+Com o jogo offline (shadNet desligado), o GT7 manda pro **Music Rally** — isso é
+comportamento real do jogo em hardware de verdade também, não bug nosso: a Polyphony
+adicionou esse modo em 2022 especificamente pra quando não dá pra conectar aos servidores
+(era a única coisa jogável no lançamento sem internet).
+
+Duas travadas distintas encontradas tentando abrir uma pista do Music Rally, cada uma **com
+o processo comendo memória sem limite até o OOM killer intervir** (uma vez chegou a derrubar
+o Claude Desktop inteiro, não só o jogo — os dois processos compartilhavam cgroup por eu ter
+lançado o shadps4 através do Claude Code):
+
+1. **Opcodes de shader de dupla precisão faltando** — `V_MIN_F64` e `V_TRUNC_F64`
+   (categoria VectorALU) não estavam implementados no recompilador
+   (`src/shader_recompiler/frontend/translate/vector_alu.cpp`), travando a compilação do
+   compute shader do Music Rally. **Corrigido** — os dois já tinham irmãos implementados do
+   lado (`V_MAX_F64`, `V_FLOOR_F64`) que serviram de modelo exato, foi só espelhar com
+   `ir.FPMin`/`ir.FPTrunc` (ambos já aceitam F64 no builder, não precisou mexer no IR).
+   Commitado.
+
+2. **Ainda sem fix**: passado o shader, trava em outro lugar —
+
+       [Debug] <Critical> image_info.cpp:202 UpdateSize: Unreachable code!
+       Unknown array mode ArrayPrt2DTiledThin1
+
+   Modo de tiling de textura da GPU (`ArrayPrt2DTiledThin1` — Partially Resident Texture,
+   feature avançada de AMDGPU) não tratado em `image_info.cpp`. Diferente do fix de opcode
+   (repetir um padrão já existente), esse aqui exige entender layout de memória de textura
+   tiled — não investigado, escopo bem maior. **Não tentar sem confirmar RAM livre e swap
+   baixo antes** — as duas vezes que essa trava aconteceu, o processo já estava passando de
+   4-10GB de RSS/shmem quando eu matei.
+
 ## DualSense por Bluetooth não pareia — pendente reboot
 
 Tentar parear o DualSense (`44:46:48:EA:FF:CB`) por Bluetooth falhava
