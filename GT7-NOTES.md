@@ -204,28 +204,69 @@ lançado o shadps4 através do Claude Code):
    helpers existentes; deixei cair no `UNREACHABLE_MSG` se aparecer, que pelo menos avisa
    claro em vez de arriscar tamanho de imagem errado silenciosamente. Commitado.
 
-3. **Ainda sem fix — mais arriscado que os dois de cima**:
+3. **Tentado, NÃO VERIFICADO — commit `86e85cd7` marca isso explicitamente**:
 
        [Debug] <Critical> vector_interpolation.cpp:101 V_INTERP_MOV_F32: Assertion Failed!
 
    `ASSERT(attr.is_flat || inst.src[0].code == 2);` em
    `src/shader_recompiler/frontend/translate/vector_interpolation.cpp:101` — o GT7 chama
    `V_INTERP_MOV_F32` com `src[0].code` 0 ou 1 (P10/P20, os parâmetros de interpolação bruta)
-   numa attribute que não é flat, e o assert só permite isso pra code==2 (P0). Achado
-   interessante: o código *depois* do assert (`ir.GetAttribute(attrib, chan, (code+1) % 3)`)
-   parece já tratar os três valores de code corretamente via rotação — o assert pode ser só
-   defensivo/não testado contra esse padrão de uso, não uma limitação real. **Mas** essa é
-   uma hipótese, não confirmada — diferente dos dois fixes acima (que tinham uma
-   implementação irmã pra copiar exatamente), aqui não tem molde pronto, é código de
-   interpolação de shader que decide como a cor/textura fica na tela. Errar aqui não trava
-   limpo como um assert — pode **renderizar errado silenciosamente**, bem mais difícil de
-   perceber do que testar. Não tentei ainda; precisa de mais confiança antes de mexer,
-   idealmente comparando com o código-fonte real do driver AMD ou de outro emulador que já
-   trate esse padrão.
+   numa attribute que não é flat, e o assert só permitia isso pra code==2 (P0). O código
+   *depois* do assert (`ir.GetAttribute(attrib, chan, (code+1) % 3)`) já trata os três
+   valores de code corretamente via rotação **quando** `profile.supports_amd_
+   shader_explicit_vertex_parameter` ou `supports_fragment_shader_barycentric` está
+   disponível — confirmado que a primeira está habilitada nessa GPU (RADV, via
+   `VK_AMD_shader_explicit_vertex_parameter` na lista de extensões do boot). Relaxei o
+   assert pra só bloquear quando *nenhuma* das duas está disponível (é aí que o fallback
+   `Flat` ignora `code` e ficaria errado de verdade).
 
-**Nas três vezes que travou (as duas incluindo essa terceira), o processo comeu memória sem
-limite até precisar `kill -9`** — confirmar RAM livre e swap baixo antes de testar de novo,
-e não deixar rodando sem monitorar.
+   **Resultado do teste**: passou do assert, mas travou de novo mais à frente — **sem
+   nenhuma mensagem de erro dessa vez**, silencioso, no meio de `Compiling vs shader ...
+   (permutation)` / `GetGraphicsPipeline`, com aviso de `page_manager.cpp` sobre memória
+   "not fully GPU mapped". Não dá pra saber com certeza se é um bloqueio novo genuíno (mais
+   provável — chegamos muito mais longe, de "não compila o shader" pra "compila e tenta
+   montar o pipeline gráfico") ou se o fix do assert causou isso. Não investigado mais a
+   fundo ainda — precisaria comparar rodando com e sem o fix pra isolar, ou adicionar
+   logging no meio da compilação de pipeline.
+
+**Nas três vezes que travou, o processo comeu memória sem limite até precisar `kill -9`**
+— confirmar RAM livre e swap baixo antes de testar de novo, e não deixar rodando sem
+monitorar. Ver seção seguinte sobre isolamento por cgroup, que resolve o *sintoma* (derrubar
+o sistema inteiro) independente de achar a causa raiz do crescimento.
+
+## Isolamento de memória: cgroup + zram/swap extra (2026-09-01)
+
+Depois do processo do jogo derrubar o **Claude Desktop inteiro** via OOM (não só o jogo —
+os dois compartilhavam cgroup, porque eu tinha lançado o shadps4 através do Claude Code),
+duas mitigações:
+
+1. **Sempre lançar o jogo dentro de um cgroup com limite próprio**, assim se ele vazar
+   memória de novo, só ele morre:
+
+       systemd-run --user --scope -p MemoryMax=8G -p MemoryHigh=6G -- \
+         env SDL_VIDEODRIVER=x11 ./shadps4 -g "<caminho do eboot.bin>"
+
+   `MemoryHigh` faz o kernel jogar esse cgroup específico pro swap agressivamente acima de
+   6G (throttling suave); `MemoryMax` é o teto duro — passou disso, o cgroup recebe SIGKILL
+   sozinho, sem acionar o OOM killer global. Testado (`systemd-run --user --scope -p
+   MemoryMax=8G ... echo` funciona), mas **ainda não testado rodando o jogo de verdade**
+   dentro dele — próxima sessão, usar sempre esse wrapper em vez de `nohup ... &` direto.
+
+2. **zram configurado, mas só ativa após reboot** — kernel rodando (`7.1.9-arch1-2`) não
+   tem mais `/usr/lib/modules/` (já trocado pra `7.2.2-arch1-1`/`7.2.2-zen1-1-zen` num
+   `pacman -Syu` anterior — mesmo motivo do Bluetooth do DualSense não parear, ver seção
+   abaixo). `zram-generator` instalado, config em `/etc/systemd/zram-generator.conf`
+   (`zram0`, `min(ram/2, 8192)`, zstd, prioridade 200 — mais alta que o swap do Optane, pra
+   ser usado primeiro). Enquanto isso, criei um swapfile temporário de 6G em `/swap/swapfile`
+   (raiz, disco único — **não** deu em `/mnt/dados`, btrfs RAID-0 rejeita swapfile
+   multi-disco: `swapon falhou: Argumento inválido`). Esse swapfile não está no `/etc/fstab`
+   de propósito (é só ponte até o reboot); depois que o zram estiver confirmado funcionando,
+   pode apagar (`swapoff /swap/swapfile && rm /swap/swapfile`).
+
+**Reboot decidido em 2026-09-01** pra resolver os dois de uma vez (zram real + módulo
+`hid-playstation` do DualSense). O usuário pediu pra eu reiniciar a máquina; a sessão do
+Claude Code **não volta sozinha** (sem autostart configurado) — precisa reabrir o Claude
+Desktop manualmente depois, a conversa deve retomar via `--resume` mas não é automático.
 
 ## DualSense por Bluetooth não pareia — pendente reboot
 
