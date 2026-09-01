@@ -98,7 +98,15 @@ void Translator::V_INTERP_MOV_F32(const GcnInst& inst) {
     const IR::Attribute attrib = IR::Attribute::Param0 + attr_index;
     const auto& attr = runtime_info.fs_info.inputs[attr_index];
     auto& interp = info.fs_interpolation[attr_index];
-    ASSERT(attr.is_flat || inst.src[0].code == 2);
+    // The Flat fallback below (no explicit vertex parameter / barycentric support) ignores
+    // src[0].code entirely and always resolves to P0, so requesting P10/P20 (code 0/1) there
+    // silently returns the wrong value - that's what this assert originally guarded against.
+    // But when either extension IS available, the branch below already resolves all three
+    // codes correctly via GetAttribute's rotation, so code 0/1 is fine in that case. GT7's
+    // Music Rally does exactly that (non-flat attr, code 0/1) and hit this unconditionally.
+    ASSERT(attr.is_flat || inst.src[0].code == 2 ||
+           profile.supports_amd_shader_explicit_vertex_parameter ||
+           profile.supports_fragment_shader_barycentric);
     if (profile.supports_amd_shader_explicit_vertex_parameter ||
         profile.supports_fragment_shader_barycentric) {
         // VSRC 0=P10, 1=P20, 2=P0
