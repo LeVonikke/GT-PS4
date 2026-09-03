@@ -434,10 +434,18 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    ligar isso destravaria sem tocar em nenhum byte do jogo. **Testado, ligado no
    `config.json` (`"dev_kit_mode": true`), jogo rodou** (log confirma
    `General isDevKit: true`) — carregou o menu de sign-in (`libSceSigninDialog`), passou da
-   splash do GT, mas ainda não passei do carregamento inicial pra confirmar se isso mudou o
-   fluxo pós-Music-Rally (trava em teste, ver "Estado do fork" pra status atual). Mesmo que
-   não resolva sozinho, é uma variável de baixo risco (reversível, config só, sem editar
-   arquivo do jogo) que vale manter ligada enquanto se testa.
+   splash do GT. **Resultado do teste: não muda nada visível.** Com rede desligada, cai no
+   mesmo aviso "sign in to PlayStation Network" de sempre; com shadNet ligado (mesma config
+   que já funcionava antes), cai no mesmo `CE-210716` de sempre (servidor da Polyphony
+   inalcançável, comportamento real confirmado). Fiquei preso num loop desse diálogo
+   reaparecendo a cada OK — não cheguei a confirmar se eventualmente cai no Music Rally como
+   sem o devkit, porque a memória apertou (GT7 + Ghidra rodando junto, disponível caiu pra
+   2,2GB) e priorizei matar o processo do jogo pra proteger o sistema, já documentado como
+   regra desta máquina. **Conclusão parcial:** `dev_kit_mode` sozinho não muda o
+   comportamento até esse ponto — não decide nada sobre `IsDebugVersion()`/menu de debug por
+   si só (ou decide, mas mais adiante, depois do ponto onde consegui testar). Deixei
+   `dev_kit_mode: true` no `config.json` (reversível, não atrapalha nada visto até agora) —
+   quem retestar deve tentar chegar até o Music Rally de novo com ele ligado e comparar.
 
    **Achado incidental útil:** `spectacle -b -n -o <arquivo.png>` tira screenshot da tela
    inteira **sem diálogo/confirmação**, mesmo em sessão Wayland — dá pra automatizar
