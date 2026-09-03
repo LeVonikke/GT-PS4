@@ -59,6 +59,10 @@ static int DumpElf(const std::filesystem::path& ebootPath, const std::filesystem
     std::vector<elf_program_header> out_phdrs(phdrs.begin(), phdrs.end());
     u64 cursor = sizeof(elf_header) + phdrs.size() * sizeof(elf_program_header);
     std::vector<std::pair<u64, std::vector<u8>>> segment_data; // {new offset, bytes}
+    // {segment index, vaddr, memsz, real offset in the ORIGINAL ebootPath file} - lets a
+    // later patch step map an address found in the extracted ELF back to where those same
+    // bytes actually live in eboot.bin, since the extraction rewrites p_offset.
+    std::vector<std::tuple<size_t, u64, u64, u64>> segment_map;
 
     for (size_t i = 0; i < phdrs.size(); i++) {
         auto& phdr = out_phdrs[i];
@@ -95,6 +99,7 @@ static int DumpElf(const std::filesystem::path& ebootPath, const std::filesystem
             return 1;
         }
 
+        segment_map.emplace_back(i, phdr.p_vaddr, phdr.p_filesz, read_offset);
         phdr.p_offset = cursor;
         segment_data.emplace_back(cursor, std::move(buf));
         cursor += phdr.p_filesz;
@@ -116,6 +121,21 @@ static int DumpElf(const std::filesystem::path& ebootPath, const std::filesystem
     }
     std::cout << "Wrote " << outPath << " (" << out_phdrs.size() << " program headers, "
               << segment_data.size() << " PT_LOAD segments extracted)\n";
+
+    // Sidecar: "<index> <vaddr_hex> <memsz_hex> <real_offset_in_ebootPath_hex>" per PT_LOAD
+    // segment, one per line, so a patch found at a vaddr in the extracted ELF can be
+    // translated back to a byte offset in the real eboot.bin (this dump's own p_offset
+    // values are made-up and do NOT correspond to anything in the original file).
+    const auto mapPath = outPath.string() + ".segmap";
+    std::ofstream mapOut(mapPath);
+    if (mapOut) {
+        mapOut << "# index vaddr memsz real_offset_in(" << ebootPath.string() << ")\n";
+        for (const auto& [idx, vaddr, memsz, real_off] : segment_map) {
+            mapOut << idx << " 0x" << std::hex << vaddr << " 0x" << memsz << " 0x" << real_off
+                   << std::dec << "\n";
+        }
+        std::cout << "Wrote " << mapPath << " (vaddr -> real eboot.bin offset map)\n";
+    }
     return 0;
 }
 
