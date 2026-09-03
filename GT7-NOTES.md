@@ -420,7 +420,31 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    em `/mnt/jogos/ShadPS4 Games/CUSA24767/eboot.bin`, no offset correspondente dentro do
    `self_segment_header` daquele segmento (não é o mesmo offset do ELF reconstruído — a
    ferramenta `--dump-elf` monta o ELF do zero, os offsets de arquivo não coincidem, só os
-   vaddr coincidem). Ainda não escrevi o código pra mapear vaddr → offset real no SELF.
+   vaddr coincidem). **Resolvido**: `--dump-elf` agora também escreve um `.segmap` (índice,
+   vaddr, tamanho, offset real no arquivo original) — verificado byte a byte que os 7 bytes
+   no offset real batem com os 7 bytes no dump pro mesmo vaddr. Então já dá pra traduzir
+   qualquer endereço achado no ELF extraído pro lugar certo no `eboot.bin` de verdade, sem
+   suposição.
+
+   **Atalho tentado em paralelo, via config em vez de patch binário:** o shadPS4 já tem um
+   `dev_kit_mode` (`EmulatorSettings.IsDevKit()`, chave `dev_kit_mode` no `config.json`) que
+   controla `sceKernelIsDevkit()` e o tamanho de memória reportado ao jogo (devkit real tem
+   mais RAM liberada). Muitos jogos de PS4 checam isso em runtime pra decidir se carregam
+   telas/menus de desenvolvedor — se o `IsDebugVersion()` do GT7 usar esse mesmo caminho,
+   ligar isso destravaria sem tocar em nenhum byte do jogo. **Testado, ligado no
+   `config.json` (`"dev_kit_mode": true`), jogo rodou** (log confirma
+   `General isDevKit: true`) — carregou o menu de sign-in (`libSceSigninDialog`), passou da
+   splash do GT, mas ainda não passei do carregamento inicial pra confirmar se isso mudou o
+   fluxo pós-Music-Rally (trava em teste, ver "Estado do fork" pra status atual). Mesmo que
+   não resolva sozinho, é uma variável de baixo risco (reversível, config só, sem editar
+   arquivo do jogo) que vale manter ligada enquanto se testa.
+
+   **Achado incidental útil:** `spectacle -b -n -o <arquivo.png>` tira screenshot da tela
+   inteira **sem diálogo/confirmação**, mesmo em sessão Wayland — dá pra automatizar
+   "screenshot + ler com Read tool" sem precisar que o usuário mande print manualmente.
+   Cliques de mouse via `xdotool` não funcionam nessa UI (SDL/gamepad-only, confirmado de
+   novo hoje); teclado via `xdotool key` depois de `xdotool search --name ... windowfocus`
+   continua funcionando.
 
    **Próximo passo real: instalar Ghidra** (`pacman -S ghidra`, está nos repos oficiais,
    versão 12.1.2). Desmontagem crua por regex encontra xrefs pontuais mas não dá controle
