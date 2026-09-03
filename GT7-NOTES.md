@@ -94,6 +94,43 @@ acima.)
 Log completo dessa tentativa (útil pra não repetir do zero): `gt7-run-2026-09-01.log`,
 nesta mesma pasta.
 
+## O fix experimental (`impl.Protect` após `impl.Unmap`) é um no-op no Windows — tentativa de corrigir, revertida
+
+**No Windows, o fix acima não faz nada de verdade.** `Unmap()` no Windows (`address_space.cpp`,
+`AddressSpace::Impl::Unmap`, ramo `#ifdef _WIN32`) marca a região como `is_mapped = false`
+antes de retornar. O `Protect()` do Windows, logo depois, **pula silenciosamente qualquer
+região com `is_mapped == false`** (`if (!it->second.is_mapped) { continue; }`) — ou seja,
+`impl.Protect(virtual_addr, size_in_vma, ReadWrite)` chamado logo após o `Unmap` nunca
+protege nada ali, porque o próprio `Unmap` já desmarcou a região um instante antes. No
+Linux/Mac, `mprotect()` não olha pra essa flag de tracking, por isso o fix funciona lá mas é
+inerte no Windows — testado em 2026-09-02: 3 de 4 lançamentos no Windows crasharam no mesmo
+`0x809ad132`, contra "funciona na prática" reportado do lado Linux.
+
+**Tentativa de corrigir (revertida)**: criei `AddressSpace::UnmapAndKeepAccessible()`, uma
+função nova que, no Windows, comita memória anônima real (`VirtualAlloc2` com
+`MEM_REPLACE_PLACEHOLDER | MEM_COMMIT`, reaproveitando `MapRegion`) em vez de deixar a
+região como placeholder inacessível — e no Linux/Mac só chama `Unmap()`+`Protect()` (que já
+funciona lá). **Quebrou pior**: o Windows gerencia VA como *placeholders* que precisam ficar
+consistentes (tamanho exato, sem "ilhas" de memória comitada permanentemente no meio de uma
+região que o resto do código espera continuar como placeholder livre). Deixar aquela região
+comitada pra sempre fragmenta esse sistema — quando o jogo pede uma alocação maior que
+precisa fazer `SplitRegion` atravessando essa "ilha", bate um assert determinístico:
+
+    [Debug] <Critical> address_space.cpp:320 SplitRegion: Assertion Failed!
+    Cannot fit region into one placeholder
+
+Isso trava **antes** até da tela "Sony Presents" (pior que o bug original, que pelo menos
+às vezes deixava rodar). **Revertido** (`git checkout -- src/core/address_space.cpp
+src/core/address_space.h src/core/memory.cpp`) — o fix original (inerte no Windows, mas não
+piora nada) é o mal menor por enquanto.
+
+**Se for tentar de novo**: a versão comitada-pra-sempre não serve; precisaria de algo tipo
+recomitar a região por um período curto (não indefinido) e reverter pra placeholder de novo
+depois — talvez via um work item assíncrono adiado, ou investigar se dá pra interceptar só a
+falha de acesso (um handler de exceção específico pra essa faixa de endereço, tipo trap
+handler, em vez de mexer no estado da região). Nenhuma das duas foi tentada ainda. Rodar o
+jogo pelo lado Linux/Arch continua sendo a opção mais estável enquanto isso não é resolvido.
+
 ## Armadilha de clone: submódulo `mesa-kosmickrisp` quebra o clone recursivo inteiro
 
 `git clone --recursive` (ou `git submodule update --init --recursive` na raiz) **falha
@@ -220,19 +257,43 @@ lançado o shadps4 através do Claude Code):
    assert pra só bloquear quando *nenhuma* das duas está disponível (é aí que o fallback
    `Flat` ignora `code` e ficaria errado de verdade).
 
-   **Resultado do teste**: passou do assert, mas travou de novo mais à frente — **sem
-   nenhuma mensagem de erro dessa vez**, silencioso, no meio de `Compiling vs shader ...
-   (permutation)` / `GetGraphicsPipeline`, com aviso de `page_manager.cpp` sobre memória
-   "not fully GPU mapped". Não dá pra saber com certeza se é um bloqueio novo genuíno (mais
-   provável — chegamos muito mais longe, de "não compila o shader" pra "compila e tenta
-   montar o pipeline gráfico") ou se o fix do assert causou isso. Não investigado mais a
-   fundo ainda — precisaria comparar rodando com e sem o fix pra isolar, ou adicionar
-   logging no meio da compilação de pipeline.
+   **Resultado do teste (na hora)**: passou do assert, mas travou de novo mais à frente —
+   sem nenhuma mensagem de erro naquele momento, silencioso, no meio de `Compiling vs
+   shader ... (permutation)` / `GetGraphicsPipeline`. **Confirmado depois do reboot (ver
+   item 4): era mesmo um bloqueio novo genuíno, não efeito colateral do fix** — rodando de
+   novo chegou bem mais longe (compilando pipeline gráfico completo, várias texturas/vertex/
+   fragment/hull/local shaders) antes de bater no bloqueio seguinte. O fix do assert fica
+   confirmado como correto.
 
-**Nas três vezes que travou, o processo comeu memória sem limite até precisar `kill -9`**
-— confirmar RAM livre e swap baixo antes de testar de novo, e não deixar rodando sem
+4. **Parede de verdade, bem maior que os fixes anteriores — não tentado**:
+
+       [Debug] <Critical> resource_tracking_pass.cpp:410 FindSharpSources: Unreachable code!
+       Bindless sharp access detected pc=0x0
+
+   Diferente dos 3 anteriores (sempre "falta um caso no switch, tem irmão pra copiar"),
+   esse é **acesso bindless a recurso** — o shader carrega o descritor de textura/buffer
+   (`ReadConstBuffer`) dinamicamente em tempo de execução em vez de referenciar um slot fixo
+   conhecido em tempo de compilação. `FindSharpSources` (`src/shader_recompiler/ir/passes/
+   resource_tracking_pass.cpp`) tenta rastrear a origem estática do descritor andando pelos
+   nós Phi do IR; quando não acha nenhuma e viu um `ReadConstBuffer` no caminho, conclui
+   bindless e desiste — porque **não existe nenhuma infraestrutura de bindless no shadPS4**
+   (`grep -rl bindless src/` só acha esse arquivo, o resto do projeto não tem nada). Resolver
+   de verdade precisaria de indexação dinâmica de descritor (`VK_EXT_descriptor_indexing`),
+   mudança no IR pra representar "índice de recurso desconhecido", e geração de SPIR-V
+   correspondente — trabalho de dias de um dev de emulador de verdade, não uma tarde. **Não
+   tentei mexer nisso.**
+
+**Music Rally provavelmente está travado em cima disso especificamente** — vale testar se
+**Arcade Mode** (também jogável offline em hardware real, confirmado por pesquisa web) usa
+os mesmos shaders/pipeline ou se escapa desse bloqueio.
+
+**Nas travadas repetidas, o processo comeu memória sem limite até precisar `kill -9`** —
+confirmar RAM livre e swap baixo antes de testar de novo, e não deixar rodando sem
 monitorar. Ver seção seguinte sobre isolamento por cgroup, que resolve o *sintoma* (derrubar
-o sistema inteiro) independente de achar a causa raiz do crescimento.
+o sistema inteiro) independente de achar a causa raiz do crescimento — **testado e
+funcionando** depois do reboot: com `systemd-run --user --scope -p MemoryMax=8G -p
+MemoryHigh=6G`, a trava do bindless empurrou memória pro swap (zram) em vez de estourar o
+sistema, RAM disponível ficou em ~3-4GB o tempo todo. Sempre lançar assim.
 
 ## Isolamento de memória: cgroup + zram/swap extra (2026-09-01)
 
