@@ -397,11 +397,22 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    propriedades/itens de debug** no construtor de algum objeto de configuração — não é a
    função `IsDebugVersion()` em si, é o código que a *cadastra* em algo (uma tabela de
    settings, possivelmente o que alimentaria um debug menu). `0x236e0ba` (`CourseDebugMode`)
-   tem o mesmo padrão. Ainda não sei o que `0xb49700` faz nem onde fica o flag real que
-   `IsDebugVersion()` (a função, não a string) consulta — isso exigiria seguir o
-   cross-reference de `call 0xb49700` e entender a lógica, que sem decompilador é
-   inviável fazer com confiança em tempo razoável (desmontagem crua sem tipos/estrutura
-   de controle vira sopa rápido).
+   tem o mesmo padrão.
+
+   **Update:** desmontei `0xb49700` à mão (real offset no eboot.bin: `0xb6ffa0`, ~350
+   bytes). Reconheço o padrão com bastante confiança: é um **"magic static"** clássico do
+   Itanium C++ ABI — guarda de inicialização de variável estática local (`test cl,cl` num
+   byte-flag em `0x60674a8`, `call __cxa_guard_acquire/release/abort` nos endereços
+   `0x3ac5360/0x3ac5330/0x3ac5340/0x3ac5350`), guardando um `weak_ptr`/`shared_ptr` estático
+   em `0x60673b0` com contagem de referência atômica (`lock xadd`/`lock inc`). Ou seja:
+   `0xb49700` é uma função `GetOrCreate(nome, valor)` tipo *lazy singleton registry* — pega
+   (ou cria na primeira chamada) uma propriedade nomeada num registro global e devolve um
+   ponteiro compartilhado pra ela. **Não é a checagem `IsDebugVersion()` em si** — é só o
+   cadastro. A checagem de verdade (onde alguém lê o valor dessa propriedade e decide
+   habilitar o menu de debug) fica em outro lugar, ainda não localizado — provavelmente
+   longe do site de registro, chamado só quando o menu tentaria abrir. Achar isso por
+   desmontagem crua deixou de compensar (sem tipos/grafo de chamadas vira sopa); é o motivo
+   de ter partido pro Ghidra (rodando em background enquanto escrevo isto).
 
    **Limite adicional achado hoje:** mesmo se a gente achar e decidir o byte certo pra
    virar, patchear esse ELF extraído **não adianta nada sozinho** — o shadPS4 carrega o
