@@ -344,6 +344,44 @@ teclado padrão do shadPS4 pra esse jogo fica em
 `~/.local/share/shadPS4/input_config/default.ini` (por jogo) e `global.ini` (atalhos
 gerais), se precisar jogar sem controle nenhum.
 
+## GT7 offline = só Music Rally, sem exceção — e o menu de debug como saída possível
+
+Confirmado navegando de verdade (2026-09-03, pós-reboot): **offline, o GT7 não tem menu
+principal nenhum** — vai direto pro Music Rally e não tem botão de voltar. Isso bate com o
+que a Polyphony fez de propósito (matéria do lançamento de 2022), não é falha da nossa
+emulação. Login genérico de PSN via shadNet não muda isso — o GT7 checa os servidores
+*dele*, não a PSN genérica.
+
+Duas saídas possíveis, nenhuma tentada até o fim:
+
+1. **Servidor falso pro protocolo específico do GT7** — não é o shadNet (isso já
+   funciona, é outra coisa: os servidores da Polyphony, protocolo proprietário deles).
+   Escopo enorme, exigiria capturar/deduzir o protocolo real do zero.
+
+2. **Menu de desenvolvedor** — existe de verdade, compilado no binário (não removido pro
+   retail). `strings` no `eboot.bin` acha **637 ocorrências** de "debug", incluindo nomes
+   muito promissores: `IsDebugVersion`, `IsDebugSettingAvailable`,
+   `IsDebugSettingEnable`, `DebugFeatures`, `CourseDebugMode` (essas soam exatamente como
+   o gate que decide se o menu de debug aparece). Guias públicos de destravar isso
+   existem, mas são pra build v1.18/firmware 9.00 — a nossa é **01.55**, bem mais antiga,
+   offset diferente, precisa ser redescoberto.
+
+   **Ferramenta nova criada pra isso**: `--dump-elf <saída>` no `shadps4` (junto com
+   `-g <eboot>`) extrai o ELF plano de dentro do wrapper SELF, pronto pra `readelf`/
+   `objdump`/Ghidra. Funciona porque os segmentos desse dump específico **não estão
+   criptografados nem comprimidos** (`Elf::LoadSegment` do próprio shadPS4 já não
+   descriptografa nada — só lê bytes crus — o que confirmou isso). Testado, gera ELF
+   válido (`readelf -h` reconhece: ELF64 x86-64 FreeBSD, 12 program headers, 2 PT_LOAD
+   extraídos, ~82MB). Commitado, reaproveitável pra qualquer sessão futura:
+
+       ./shadps4 --dump-elf gt7-eboot-plain.elf -g "<caminho>/eboot.bin"
+
+   **Não fui além disso** — sem section headers nem símbolos (SELF de PS4 não carrega
+   isso), então cruzar a string "IsDebugVersion" (achada via `strings`, tenho o offset no
+   arquivo) com o código que a referencia exigiria desmontar por volta desse offset e
+   caçar acesso RIP-relative à mão, ou carregar no Ghidra/IDA — trabalho de verdade,
+   não tentado. Próximo passo concreto pra quem pegar isso depois.
+
 ## Build no Windows
 
 Dependências (ver `documents/building-windows.md` no repo): Visual Studio 2022 com C++ e
@@ -363,6 +401,11 @@ mas o `.gitmodules` da armadilha acima independe de SO, então espere o mesmo pr
 
 ## Estado do fork
 
-`origin` = `https://github.com/shadps4-emu/shadPS4.git` (upstream público, só leitura por
-enquanto). `github` (ou o remote que você configurar) = este repo privado. Sem commits
-próprios ainda — HEAD = upstream `main` no momento da cópia.
+`origin` = `https://github.com/shadps4-emu/shadPS4.git` (upstream público, só leitura).
+`github` = `LeVonikke/GT7-PC-Recomp`, repo privado — é pra onde os commits vão. Compartilhado
+também pelo lado Windows dessa máquina dual-boot (mesmo caminho, via `F:\...` — se aparecer
+diff gigante de CRLF em `.cpp`/`.h` sem eu ter mexido, é isso, não é incidente).
+
+Commits próprios até agora (2026-09-03): fix de crash de boot (memória liberada virando
+guard page), fix de vazamento de epoll, fix de tiling PRT, fix de assert de interpolação,
+ferramenta `--dump-elf`. Todos enviados pro `github` remote.

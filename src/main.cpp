@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@
 #include "core/emulator_state.h"
 #include "core/file_sys/fs.h"
 #include "core/ipc/ipc.h"
+#include "core/loader/elf.h"
 #include "core/user_settings.h"
 #include "emulator.h"
 #include "imgui/big_picture/big_picture.h"
@@ -28,6 +30,94 @@
 #elif defined(__APPLE__)
 #include <sys/sysctl.h>
 #endif
+
+// Extracts the plaintext ELF wrapped inside a (S)ELF eboot, for offline disassembly. Only
+// handles segments that are neither encrypted nor compressed (Core::Loader::Elf::LoadSegment
+// itself doesn't decrypt/decompress either - on this dump the segments are already plaintext,
+// "fself"-style, which is why the emulator can load and run it directly with no extra keys).
+static int DumpElf(const std::filesystem::path& ebootPath, const std::filesystem::path& outPath) {
+    Core::Loader::Elf elf;
+    elf.Open(ebootPath);
+    if (!elf.IsSelfFile() && !elf.IsElfFile()) {
+        std::cerr << "Not a recognizable (S)ELF/ELF file: " << ebootPath << "\n";
+        return 1;
+    }
+
+    const auto elf_header = elf.GetElfHeader();
+    const auto phdrs = elf.GetProgramHeader();
+    const auto self_segments = elf.GetSegmentHeader();
+
+    std::ifstream src(ebootPath, std::ios::binary);
+    if (!src) {
+        std::cerr << "Failed to open " << ebootPath << " for reading\n";
+        return 1;
+    }
+
+    // Compute a fresh flat layout: ELF header, then program headers, then each PT_LOAD
+    // segment's bytes back to back, page-aligned. Non-PT_LOAD segments keep their original
+    // p_offset/p_filesz zeroed out (nothing to copy for them here).
+    std::vector<elf_program_header> out_phdrs(phdrs.begin(), phdrs.end());
+    u64 cursor = sizeof(elf_header) + phdrs.size() * sizeof(elf_program_header);
+    std::vector<std::pair<u64, std::vector<u8>>> segment_data; // {new offset, bytes}
+
+    for (size_t i = 0; i < phdrs.size(); i++) {
+        auto& phdr = out_phdrs[i];
+        if (phdr.p_type != PT_LOAD || phdr.p_filesz == 0) {
+            phdr.p_offset = 0;
+            continue;
+        }
+
+        // Find the self_segment_header covering this program header (mirrors
+        // Core::Loader::Elf::LoadSegment's own lookup, minus the memory write).
+        const self_segment_header* seg = nullptr;
+        for (const auto& s : self_segments) {
+            if (s.IsBlocked() && s.GetId() == i) {
+                seg = &s;
+                break;
+            }
+        }
+        u64 read_offset = phdr.p_offset;
+        if (seg) {
+            if (seg->IsEncrypted() || seg->IsCompressed()) {
+                std::cerr << "Segment " << i
+                          << " is encrypted/compressed - can't extract plaintext, aborting.\n";
+                return 1;
+            }
+            read_offset = seg->file_offset;
+        }
+
+        std::vector<u8> buf(phdr.p_filesz);
+        src.seekg(static_cast<std::streamoff>(read_offset));
+        src.read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+        if (!src) {
+            std::cerr << "Short read on segment " << i << " (offset " << read_offset << ", size "
+                      << buf.size() << ")\n";
+            return 1;
+        }
+
+        phdr.p_offset = cursor;
+        segment_data.emplace_back(cursor, std::move(buf));
+        cursor += phdr.p_filesz;
+        cursor = (cursor + 0xF) & ~u64(0xF);
+    }
+
+    std::ofstream out(outPath, std::ios::binary);
+    if (!out) {
+        std::cerr << "Failed to open " << outPath << " for writing\n";
+        return 1;
+    }
+    out.write(reinterpret_cast<const char*>(&elf_header), sizeof(elf_header));
+    out.write(reinterpret_cast<const char*>(out_phdrs.data()),
+              static_cast<std::streamsize>(out_phdrs.size() * sizeof(elf_program_header)));
+    for (const auto& [offset, bytes] : segment_data) {
+        out.seekp(static_cast<std::streamoff>(offset));
+        out.write(reinterpret_cast<const char*>(bytes.data()),
+                  static_cast<std::streamsize>(bytes.size()));
+    }
+    std::cout << "Wrote " << outPath << " (" << out_phdrs.size() << " program headers, "
+              << segment_data.size() << " PT_LOAD segments extracted)\n";
+    return 0;
+}
 
 int main(int argc, char* argv[]) {
 #ifdef _WIN32
@@ -67,6 +157,7 @@ int main(int argc, char* argv[]) {
     std::optional<std::filesystem::path> addGameFolder;
     std::optional<std::filesystem::path> setAddonFolder;
     std::optional<std::string> patchFile;
+    std::optional<std::filesystem::path> dumpElfPath;
 
     std::vector<std::pair<std::filesystem::path, std::string>> mounts;
     static std::vector<std::string> env_vars;
@@ -98,6 +189,11 @@ int main(int argc, char* argv[]) {
     app.add_option("--set-addon-folder", setAddonFolder)->check(CLI::ExistingDirectory);
     app.add_option("--mount", mounts, "Mount source to destination");
     app.add_option("-e,--env", env_vars, "Environment variables to pass to the guest");
+    app.add_option("--dump-elf", dumpElfPath,
+                   "Extract the plaintext ELF from the game's (S)ELF eboot instead of running "
+                   "it - for offline reverse-engineering (disassembly/symbol lookup), no "
+                   "in-emulator effect. Fails loudly if any PT_LOAD segment is still encrypted "
+                   "or compressed - this only works on already-decrypted 'fself' style dumps.");
 
     // ---- Capture args after `--` verbatim ----
     app.allow_extras();
@@ -245,6 +341,10 @@ int main(int argc, char* argv[]) {
             LOG_ERROR(Debug, "Game ID or file path not found: {}", *gamePath);
             return 1;
         }
+    }
+
+    if (dumpElfPath.has_value()) {
+        return DumpElf(ebootPath, *dumpElfPath);
     }
 
     auto* emulator = Common::Singleton<Core::Emulator>::Instance();
