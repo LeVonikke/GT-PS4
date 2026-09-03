@@ -376,11 +376,46 @@ Duas saídas possíveis, nenhuma tentada até o fim:
 
        ./shadps4 --dump-elf gt7-eboot-plain.elf -g "<caminho>/eboot.bin"
 
-   **Não fui além disso** — sem section headers nem símbolos (SELF de PS4 não carrega
-   isso), então cruzar a string "IsDebugVersion" (achada via `strings`, tenho o offset no
-   arquivo) com o código que a referencia exigiria desmontar por volta desse offset e
-   caçar acesso RIP-relative à mão, ou carregar no Ghidra/IDA — trabalho de verdade,
-   não tentado. Próximo passo concreto pra quem pegar isso depois.
+   **Update 2026-09-03, à mão sem Ghidra:** localizei de verdade 3 das 5 strings de debug
+   via busca por instrução `lea reg64, [rip+disp32]` cujo alvo calculado bate com o offset
+   da string (script python, varre os ~517k candidatos `lea`, filtra por ModRM
+   rip-relative). Confirmado com `objdump -D -b binary -m i386:x86-64 -M intel` no entorno
+   de cada acerto — são instruções reais, não coincidência de bytes em dados:
+
+   | string | vaddr (no ELF extraído) | endereço da instrução `lea` que referencia |
+   |---|---|---|
+   | `IsDebugVersion`     | `0x3eded44` | `0x1d61550` |
+   | `DebugFeatures`      | `0x3d10840` | `0x10ec0d7` |
+   | `CourseDebugMode`    | `0x3efa3d9` | `0x236e0ba` |
+   | `IsDebugSettingAvailable` | `0x3b0ce5f` | não achado (não referenciada por `lea` direto — talvez só via `mov`/tabela de ponteiros em `.data`, não procurei isso ainda) |
+   | `IsDebugSettingEnable`    | `0x3b0b9f9` | idem |
+
+   Em `0x1d61550` o padrão é bem claro: uma sequência repetida de
+   `lea rsi,[string]; lea rdx,[outra string vizinha]; mov rdi,r14; call 0xb49700`, uma vez
+   por string, para várias strings de debug seguidas (`0x3eded34`, `0x3eded44` =
+   `IsDebugVersion`, `0x3eded53`, ...). Isso tem cara de **registro de uma tabela de
+   propriedades/itens de debug** no construtor de algum objeto de configuração — não é a
+   função `IsDebugVersion()` em si, é o código que a *cadastra* em algo (uma tabela de
+   settings, possivelmente o que alimentaria um debug menu). `0x236e0ba` (`CourseDebugMode`)
+   tem o mesmo padrão. Ainda não sei o que `0xb49700` faz nem onde fica o flag real que
+   `IsDebugVersion()` (a função, não a string) consulta — isso exigiria seguir o
+   cross-reference de `call 0xb49700` e entender a lógica, que sem decompilador é
+   inviável fazer com confiança em tempo razoável (desmontagem crua sem tipos/estrutura
+   de controle vira sopa rápido).
+
+   **Limite adicional achado hoje:** mesmo se a gente achar e decidir o byte certo pra
+   virar, patchear esse ELF extraído **não adianta nada sozinho** — o shadPS4 carrega o
+   `eboot.bin` original (SELF), não esse dump. Qualquer patch precisa ir no arquivo real
+   em `/mnt/jogos/ShadPS4 Games/CUSA24767/eboot.bin`, no offset correspondente dentro do
+   `self_segment_header` daquele segmento (não é o mesmo offset do ELF reconstruído — a
+   ferramenta `--dump-elf` monta o ELF do zero, os offsets de arquivo não coincidem, só os
+   vaddr coincidem). Ainda não escrevi o código pra mapear vaddr → offset real no SELF.
+
+   **Próximo passo real: instalar Ghidra** (`pacman -S ghidra`, está nos repos oficiais,
+   versão 12.1.2). Desmontagem crua por regex encontra xrefs pontuais mas não dá controle
+   de fluxo, não decompila condicionais, e não escala pra entender o que `0xb49700` faz.
+   Sem isso, continuar por aqui é apostar em sorte. Pedido `sudo -v` ao usuário pra
+   instalar.
 
 ## Build no Windows
 
