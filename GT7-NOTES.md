@@ -460,6 +460,43 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    Sem isso, continuar por aqui é apostar em sorte. Pedido `sudo -v` ao usuário pra
    instalar.
 
+   **Update: Ghidra instalado e rodado headless, análise completa (38min, binário de
+   80MB).** Comando reproduzível (projeto fica salvo, próxima vez é instantâneo — não
+   precisa reanalisar):
+
+       /opt/ghidra/support/analyzeHeadless <dir_projeto> GT7Project \
+         -import gt7-eboot-plain.elf -processor x86:LE:64:default \
+         -scriptPath <dir_com_script> -postScript DumpDebugXrefs.java \
+         -log ghidra_import.log
+
+   O script post-analysis (`DumpDebugXrefs.java`, no histórico do commit) decompila as
+   funções de interesse e despeja xrefs num `.txt`. **Confirmou com decompilação de verdade
+   (não só palpite por bytes) exatamente o que a análise manual já suspeitava:** `0xb49700`
+   é uma função `GetOrCreate(param_1, param_2)` — guarda de "magic static" (`if
+   (DAT_060674a8 == '\0') { ...__cxa_guard... }`), lock/incremento atômico de refcount,
+   devolve um singleton compartilhado. **Não decide nada sozinha** — é só cadastro. E é
+   usada em escala: a lista de quem chama essa função tem **dezenas de sites só nos
+   primeiros 50 mostrados** (`0x2ce3f1b`, `0x2ce4475`, `0x2ce4497`, ... de 0x22 em 0x22
+   bytes — uma tabela grande e repetitiva de registro de propriedades, bate com os ~600
+   nomes de debug achados por `strings`). Ghidra **não conseguiu** achar os limites de
+   função nos outros 3 endereços (`0x1d61550`, `0x10ec0d7`, `0x236e0ba` — os `lea` que
+   carregam `IsDebugVersion`/`DebugFeatures`/`CourseDebugMode`): "No function contains this
+   address" — a análise automática não criou um `Function` ali (o binário sem section
+   headers/símbolos confunde o detector de limite de função em regiões grandes). Dá pra
+   forçar manualmente no Ghidra interativo (não tentei — precisaria abrir a GUI, que é
+   trabalho de sessão longa, não headless).
+
+   **Onde isso deixa a investigação:** confirmado com alta confiança o que `0xb49700` é;
+   ainda **não achamos onde o valor registrado é lido de volta** pra decidir se um menu de
+   debug abre. Esse "read-back" site é outro lugar no binário, desconhecido, e não há atalho
+   óbvio pra achá-lo sem navegar o grafo de chamadas manualmente na GUI do Ghidra (que
+   funciona pro projeto já salvo em `ghidra_proj/GT7Project`, é só abrir
+   `ghidra_proj/GT7Project/gt7-eboot-plain.elf` na GUI normal — não tentei, é interativo).
+   Isso é o ponto onde a investigação por patch binário deixa de compensar em custo/retorno
+   pra continuar sem ferramenta interativa de verdade: já foram ~2h desta sessão só nessa
+   frente. Alternativa que ainda não foi tentada: servidor falso específico do protocolo da
+   Polyphony (nunca começado, escopo grande, ver seção acima).
+
 ## Build no Windows
 
 Dependências (ver `documents/building-windows.md` no repo): Visual Studio 2022 com C++ e
