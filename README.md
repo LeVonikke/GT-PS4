@@ -32,6 +32,18 @@ SPDX-License-Identifier: GPL-2.0-or-later
 | :------------------------------------------------------------------------: | :------------------------------------------------------------------: |
 | ![Yakuza screenshot](./documents/Screenshots/3.png) | ![DRIVECLUB screenshot](./documents/Screenshots/4.png) |
 
+# Este fork
+
+Fork pessoal do shadPS4 pra rodar jogos Gran Turismo específicos (cópias legais).
+
+| branch | jogo | estado |
+|---|---|---|
+| `main` | Gran Turismo Sport (CUSA02168) | ativo — ver [`GT-SPORT-NOTES.md`](GT-SPORT-NOTES.md) |
+| `gt7` | Gran Turismo 7 (CUSA24767) | pausado, preservado no commit onde parou — ver [`GT7-NOTES.md`](GT7-NOTES.md) |
+
+`upstream` aponta pro [shadps4-emu/shadPS4](https://github.com/shadps4-emu/shadPS4) oficial,
+pra cherry-picks futuros.
+
 # General information
 
 **shadPS4** is an early **PlayStation 4** emulator for **Windows**, **Linux** and **macOS** written in C++.
