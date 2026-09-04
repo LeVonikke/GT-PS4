@@ -660,3 +660,39 @@ telemetria local** (`192.168.x.x`, usado por simuladores/motion rigs) — featur
 diferente, já documentada e sem relação com a conexão remota que investigamos. Confirma:
 não há atalho/referência pública pra reverter o protocolo do backend real; servidor falso
 continua sendo trabalho do zero, de escopo grande, pausado por decisão já registrada acima.
+
+## Bindless (resource_tracking_pass.cpp) — reconfirmado escopo grande, inclusive só pra não travar
+
+Tentei achar um jeito barato de pelo menos não derrubar o processo inteiro quando o shader
+bate nesse `UNREACHABLE_MSG("Bindless sharp access detected...")` (em vez de implementar
+bindless de verdade). Não existe infraestrutura de recuperação de erro de compilação de
+shader em lugar nenhum do código (`grep catch` em `src/video_core` e
+`src/shader_recompiler` só acha 1 resultado, não relacionado). Fazer isso direito exigiria:
+um tipo de exceção próprio (sem usar o `ASSERT`/`UNREACHABLE` globais, que fazem `int3` e
+derrubam o processo por design — mudar isso globalmente afetaria todo assert do projeto),
+um shader SPIR-V "stub" válido pra usar de fallback (gerar isso à mão tem risco real de
+travar o driver Vulkan se o SPIR-V ficar malformado), e plumbing em `PipelineCache::GetProgram`
+pra propagar "essa pipeline falhou, pula o draw" sem quebrar o resto. Escopo real, não
+tentei — risco de crash pior (nível driver) compensava mais que o benefício de tentar às
+pressas. Mantém a avaliação original: bindless (de qualquer forma) é trabalho de dias, não
+desta sessão.
+
+## Opcodes F64 que faltavam — 3 fixes seguros no mesmo padrão dos já feitos
+
+Levantamento de todos os opcodes `V_*_F64` definidos no ISA (`opcodes.h`) vs. os que tinham
+função própria em `translate.h`/dispatch — vários "buracos" (`V_SQRT_F64`, `V_LDEXP_F64`,
+`V_DIV_FIXUP_F64`, etc.), mas a maioria não tem sequer suporte no backend SPIR-V ainda
+(`grep EmitFPSqrt64` não acha nada — só existe versão F32). Dois casos, porém, tinham
+**suporte completo no backend SPIR-V só faltando o roteamento do frontend** — exatamente o
+padrão dos fixes já feitos hoje (`V_MIN_F64`/`V_TRUNC_F64`):
+
+- `V_CEIL_F64` (espelha `V_FLOOR_F64`, usa `ir.FPCeil` — `EmitFPCeil64` já existe)
+- `V_RNDNE_F64` (espelha `V_TRUNC_F64`, usa `ir.FPRoundEven` — `EmitFPRoundEven64` já existe)
+- `V_RSQ_F64` (espelha `V_RCP_F64`, usa `ir.FPRecipSqrt` — `EmitFPRecipSqrt64` já existe)
+
+Implementados em `vector_alu.cpp`/`translate.h` (declaração + implementação + entrada no
+dispatch `switch`), 3 linhas cada, idêntico ao padrão do `V_MIN_F64` original. Build limpo,
+testado com o GT7 real por 45s: 14 shaders compilados com sucesso, zero `Unreachable`/
+`Assertion Failed`, sem regressão. `V_SQRT_F64` e os demais ficam de fora — precisariam de
+trabalho no backend SPIR-V primeiro (`EmitFPSqrt64` não existe), fora do escopo de "só
+rotear o frontend".

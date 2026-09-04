@@ -212,6 +212,8 @@ public:
     void V_CVT_F32_UBYTE(u32 index, const GcnInst& inst);
     void V_FLOOR_F64(const GcnInst& inst);
     void V_TRUNC_F64(const GcnInst& inst);
+    void V_CEIL_F64(const GcnInst& inst);
+    void V_RNDNE_F64(const GcnInst& inst);
     void V_FRACT_F32(const GcnInst& inst);
     void V_TRUNC_F32(const GcnInst& inst);
     void V_CEIL_F32(const GcnInst& inst);
@@ -222,6 +224,7 @@ public:
     void V_RCP_F32(const GcnInst& inst);
     void V_RCP_LEGACY_F32(const GcnInst& inst);
     void V_RCP_F64(const GcnInst& inst);
+    void V_RSQ_F64(const GcnInst& inst);
     void V_RSQ_F32(const GcnInst& inst);
     void V_SQRT_F32(const GcnInst& inst);
     void V_SIN_F32(const GcnInst& inst);
