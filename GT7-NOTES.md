@@ -810,3 +810,37 @@ funciona de verdade — o que enganava antes era o `spectacle` tirando o screens
 demais depois do `key`, antes do jogo processar o input e trocar de tela; a screenshot
 seguinte, um pouco mais tarde, já mostrava o avanço. Não é problema de mapeamento de tecla
 nem de foco de janela — é só timing entre o `key` e o `screenshot`.
+
+## Achado o ponto exato do travamento pós-CE-210716: loop apertado em `sceDeviceServiceGetEventState`
+
+Capturando log filtrado (`Stub: `) durante uma sessão que travou de verdade (tela congelada,
+processo consumindo CPU alta, depois `timeout` matou), achei o momento exato antes da
+janela sumir: **centenas de linhas idênticas seguidas**, sem nenhuma outra coisa no meio:
+
+    [Core] <Error> (GPORT) stubs.cpp:39 CommonStub: Stub: sceDeviceServiceGetEventState
+    (nid: 9ddRUOV8Q5A) called, returning zero to 0x35e6c01
+
+Chamada, retorna 0, chamada de novo, imediatamente, na mesma thread (`GPORT`), no mesmo
+endereço de retorno — um loop de polling que nunca recebe o sinal de "sem eventos" e por
+isso nunca sai. Isso é bem mais específico que o "trava a GPU" documentado antes (que
+provavelmente é a mesma coisa, só que sem visibilidade do que travava — essa clareza só foi
+possível graças ao fix de cache do `GetStub` de hoje).
+
+`sceDeviceServiceGetEventState` é 1 dos 3 stubs da família `sceDeviceService*`
+(`Initialize`, `GetEventState`, `QueryDeviceInfo_`) — nenhum tem implementação em lugar
+nenhum do código, nem documentação pública encontrada (procurei OpenOrbis SDK, PS4SDK, nada
+achado com esse nome). **Não tentei implementar às cegas** — não sei se `0` significa
+"sucesso, tem evento" (fazendo o jogo processar e pedir o próximo, daí o loop) ou "sem
+evento, tudo certo" (caso em que o bug seria outro). Uma correção real exigiria saber a
+semântica de retorno de verdade, que não tenho como confirmar sem documentação ou captura
+de tráfego de hardware real.
+
+**Pista concreta pra quem for atacar isso**: é praticamente certo que a correção fica em
+`GetStub`/`CommonStub` (`src/core/aerolib/stubs.cpp`) — ou um caso especial só pra essa NID
+retornando um código de "nada mudou" em vez de 0, ou (mais seguro, não exige saber a
+semântica exata) um pequeno `sleep`/yield dentro do stub genérico quando a mesma NID é
+chamada muitas vezes seguidas em rajada, pra pelo menos parar de queimar CPU a 100% numa
+thread enquanto o jogo "trava" — não resolve o jogo, mas evita o hangup gerar pressão de
+memória/CPU que já derrubou o sistema mais de uma vez nesta sessão. Não implementei nenhuma
+das duas por incerteza sobre efeitos colaterais numa mudança tão global (afetaria todo NID
+de todo jogo, não só esse).
