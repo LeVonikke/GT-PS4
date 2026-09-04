@@ -802,3 +802,10 @@ regrediram nada. Resultado: **mesmo loop de sempre, sem crash, memória estável
 menos). Não consegui sair do loop dessa vez com `cross`/`up+cross` repetidos — mesmo
 comportamento intermitente já visto antes (às vezes cai no Music Rally depois de várias
 tentativas, às vezes não). Não é regressão, é o mesmo território conhecido.
+
+**Padrão confirmado pelo usuário controlando manualmente**: o diálogo `CE-210716` aparece
+**exatamente duas vezes seguidas**, e na segunda confirmação cai de volta na tela de
+carregamento (spinner do logo GT) — não é infinito, só precisa dispensar duas vezes. Nos
+testes automatizados eu não tinha contado com precisão quantas vezes tinha tentado; isso
+explica por que às vezes "funcionava" e às vezes parecia travado — dependia de quantos
+`cross` eu já tinha mandado antes de checar o estado.
