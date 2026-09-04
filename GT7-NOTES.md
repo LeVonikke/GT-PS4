@@ -703,3 +703,41 @@ Achado mais um do mesmo padrão ao varrer `V_CVT_*_F64`: **`V_CVT_U32_F64`** —
 compilados, sem crash). Os outros `V_CVT_*_F64` do ISA (`V_CVT_F64_F32/I32/U32`) já estavam
 cobertos; `V_CVT_PKACCUM_U8_F32` fica de fora (não é conversão simples 1:1, é
 pack-accumulate — mais arriscado de espelhar às cegas sem verificar semântica exata).
+
+## Sincronizado com o upstream oficial (shadps4-emu/shadPS4) — 7 commits trazidos
+
+`git fetch origin` mostrou 12 commits novos no upstream desde que bifurcamos. Revisei um a
+um (`git show --stat`) e trouxe os pequenos/seguros via `git cherry-pick`, pulando os de
+risco maior:
+
+**Trazidos (todos aplicaram limpo, sem conflito, exceto o de segurança que dependia do que
+foi pulado):**
+- `IMAGE_SAMPLE_D_O` (#4958) — 1 linha, opcode de imagem faltando no dispatch, mesmo padrão
+  dos fixes que fiz hoje.
+- `shader_recompiler: Enhance shared memory barrier handling and add divergent loop
+  detection` (#4941) — corrige UB de barrier em loop divergente em compute shader; bump de
+  versão do cache de shader binário (3→4), então caches antigos são invalidados sozinhos.
+- `Http module fixups and implementations` (#4933) — gzip, cache de conexão redirecionada,
+  User-Agent batendo com o jogo real, `sceNpLookup*`. **Dependia** do `np_utility` abaixo
+  (só percebi depois que o build quebrou com `np_utility.h file not found` — corrigido
+  trazendo o commit que faltava).
+- `np_utility initial impelmentation` (#4940) — cria `src/core/libraries/np/np_utility/`
+  (940 linhas), mexe em `shadnet.proto`. Maior dos trazidos; trouxe só porque o HTTP acima
+  dependia dele, não avaliei a fundo se adiciona algo que a gente precisa.
+- Fix de porta 255 em `audioout.cpp` (#4946), decode sRGB pra `A2R10G10B10Srgb` (#4957,
+  correção visual), fix de erro de criar arquivo em pasta inexistente (#4952), fix de log
+  atrás de `should_log` (#4942) — todos pequenos e independentes.
+
+**Pulados, de propósito:**
+- `Upstreaming imgui` (#4960) e `Update sirit submodule` (#4956) — mexem em submódulo, risco
+  de repetir a armadilha do clone recursivo já documentada acima.
+- `vdec2: support for h265/hevc` (#4951) — reescrita grande do decoder de vídeo (444
+  inserções), sem evidência de que o GT7 precisa disso agora; risco desproporcional ao
+  benefício sem teste.
+- `we take security seriously here or whatever` (#4955) — fix de segurança pequeno, mas
+  **depende da reescrita do HEVC acima** (conflito de merge direto nisso); só voltar a
+  tentar se algum dia trouxermos o HEVC também.
+
+Rebuild completo com tudo junto (os 7 cherry-picks + os 4 fixes locais de hoje) — limpo,
+testado com o GT7 real (16 shaders compilados, zero crash, memória saudável). Tudo
+commitado e enviado pro `github` remote.
