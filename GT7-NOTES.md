@@ -787,3 +787,18 @@ Testado: **0 `UnknownStub` (era 69), 52 stubs nomeados corretamente** na mesma j
 Sem regressão (build limpo, GT7 rodou 45s sem crash, memória saudável). Esse fix por si só
 já vale a pena manter mesmo que nada mais avance — sem ele, qualquer investigação futura de
 "o que falta implementar" fica cega depois que o pool esgota.
+
+Os outros 13 stubs restantes (`sceBluetoothHid*`, `sceDeviceService*`,
+`sceKernelGetOpenPsId`, `_sceKernelSetThreadAtexit*`) **não têm nenhuma implementação
+irmã em lugar nenhum do código** pra espelhar com segurança — são features genuinamente
+novas, não lacunas pontuais. Não tentei implementar nenhum às cegas (arriscaria comportamento
+sutilmente errado, pior que o stub honesto atual). Ficam documentados aqui como candidatos
+pra quem quiser pesquisar a semântica exata da API real do PS4 antes de implementar.
+
+**Teste empírico pós-fixes de hoje:** rodei o GT7 de novo até o loop do `CE-210716` pra
+confirmar que os 13 commits de hoje (4 fixes locais + 7 cherry-picks + fix do stub) não
+regrediram nada. Resultado: **mesmo loop de sempre, sem crash, memória estável em ~6GB**
+(bem mais saudável que rodadas anteriores na sessão, que várias vezes chegaram a 2GB ou
+menos). Não consegui sair do loop dessa vez com `cross`/`up+cross` repetidos — mesmo
+comportamento intermitente já visto antes (às vezes cai no Music Rally depois de várias
+tentativas, às vezes não). Não é regressão, é o mesmo território conhecido.
