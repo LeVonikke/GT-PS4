@@ -900,3 +900,37 @@ pra fechar o teste). Isso é evidência bem mais forte que o teste anterior de q
 muito mais tempo do que o comportamento documentado como problemático. Ainda não é prova
 definitiva de causalidade, mas é o resultado mais tranquilizador desta investigação até
 agora.
+
+## Fix real (não só mitigação): `sceDeviceServiceGetEventState` corrigido de verdade
+
+Achei a peça que faltava pra corrigir isso de verdade, não só amortecer: `src/core/libraries/system/userservice.cpp`
+já tem `sceUserServiceGetEvent` **implementado corretamente**, e ele segue exatamente o
+idioma que eu suspeitava sem conseguir confirmar antes — retorna `ORBIS_OK` só quando
+realmente tira um evento da fila, e um código de erro específico
+(`ORBIS_USER_SERVICE_ERROR_NO_EVENT`) quando a fila está vazia. Isso é o padrão-ouro das
+APIs `Get*Event*` do PS4: **"sem evento" é uma resposta válida e esperada, não um erro
+genérico** — e é exatamente o que faltava no stub genérico do `sceDeviceServiceGetEventState`
+(que sempre devolve `0` = `ORBIS_OK` = "tem evento, processa", fazendo o chamador voltar
+pra pedir o próximo pra sempre).
+
+**Implementado** (`src/core/aerolib/stubs.cpp` + `src/core/libraries/pad/pad_errors.h`):
+- Adicionei `ORBIS_DEVICE_SERVICE_ERROR_NO_EVENT = 0x809b0002` em `pad_errors.h`, ao lado
+  dos outros dois `ORBIS_DEVICE_SERVICE_ERROR_*` que já existiam ali (`INVALID_USER`,
+  `USER_NOT_LOGIN` — confirma que o módulo de erro `0x809b` é real, só faltava esse membro).
+  **O valor exato do código não está confirmado contra hardware/SDK real** — é inferido do
+  padrão de numeração do módulo, documentado como tal no comentário. Não deveria importar
+  pro jogo, que provavelmente só testa `if (ret != ORBIS_OK)`, não o valor exato.
+- `GetStub()` agora trata esse NID (`9ddRUOV8Q5A`) como caso especial, sem criar um módulo
+  `DeviceService` inteiro (não vale o escopo pra uma função só) — devolve o endereço de uma
+  função dedicada que sempre retorna esse código de erro em vez do stub genérico.
+
+**Testado**: taxa de chamada caiu de "centenas de milhares/segundo, sem nenhuma outra linha
+no meio" pra **~1 chamada por segundo**, num padrão de polling completamente normal e são.
+Memória ficou saudável o teste inteiro (6,2→6,0GB, sem tendência de queda). Isso é
+consistente com "consertei o comportamento" e não só "amorteci o sintoma" — a taxa de
+chamada em si mudou de ordem de grandeza, não só ficou mais devagar proporcionalmente.
+
+Primeiro fix desta sessão que ataca a causa raiz do travamento pós-`CE-210716`/Music-Rally
+em vez de só documentar ou mitigar. Ainda não confirmei se isso sozinho permite chegar no
+Music Rally de verdade (não cheguei a testar até esse ponto, sessão compartilhada com outro
+trabalho na máquina — próxima sessão deveria tentar).

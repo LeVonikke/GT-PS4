@@ -3,11 +3,13 @@
 
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include "common/logging/log.h"
 #include "core/aerolib/aerolib.h"
 #include "core/aerolib/stubs.h"
+#include "core/libraries/pad/pad_errors.h"
 
 namespace Core::AeroLib {
 
@@ -51,6 +53,23 @@ static u64 UnknownStub() {
     return 0;
 }
 
+// sceDeviceServiceGetEventState (nid 9ddRUOV8Q5A): the generic stub above always returns 0
+// (ORBIS_OK), which every Get*Event-style PS4 API treats as "an event was dequeued, go
+// process it" (confirmed by the real implementation of sceUserServiceGetEvent, which
+// returns ORBIS_OK only when it actually popped an event and ORBIS_USER_SERVICE_ERROR_NO_EVENT
+// otherwise). Nothing in shadPS4 ever generates a device-service event, so a caller that
+// polls this in a loop expecting *some* terminal "no event" reply spins forever - observed
+// with GT7 as hundreds of thousands of consecutive calls/sec on one thread. Special-cased
+// here (instead of building out a whole DeviceService library module for a single function)
+// to consistently report "no event", matching the idiom without guessing at what "an event"
+// would even contain since nothing produces one. See GT7-NOTES.md.
+static u64 DeviceServiceGetEventStateStub() {
+    LOG_ERROR(Core, "Stub: sceDeviceServiceGetEventState (special-cased), returning "
+                    "ORBIS_DEVICE_SERVICE_ERROR_NO_EVENT to {}",
+              __builtin_return_address(0));
+    return static_cast<u64>(static_cast<u32>(ORBIS_DEVICE_SERVICE_ERROR_NO_EVENT));
+}
+
 static const NidEntry* stub_nids[MAX_STUBS];
 static std::string stub_nids_unknown[MAX_STUBS];
 
@@ -92,6 +111,13 @@ static std::unordered_map<std::string, u64> nid_to_stub;
 u64 GetStub(const char* nid) {
     if (const auto it = nid_to_stub.find(nid); it != nid_to_stub.end()) {
         return it->second;
+    }
+
+    // See DeviceServiceGetEventStateStub() above for why this one nid is special-cased.
+    if (std::string_view(nid) == "9ddRUOV8Q5A") {
+        const u64 stub_addr = (u64)&DeviceServiceGetEventStateStub;
+        nid_to_stub.emplace(nid, stub_addr);
+        return stub_addr;
     }
 
     if (UsedStubEntries >= MAX_STUBS) {

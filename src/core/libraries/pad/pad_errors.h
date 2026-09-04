@@ -23,3 +23,11 @@ constexpr int ORBIS_PAD_ERROR_SEND_AGAIN = 0x80920105;
 
 constexpr s32 ORBIS_DEVICE_SERVICE_ERROR_INVALID_USER = 0x809b0001;
 constexpr s32 ORBIS_DEVICE_SERVICE_ERROR_USER_NOT_LOGIN = 0x809b0081;
+// Not confirmed against real hardware/SDK docs - inferred from the module's error code
+// range (0x809bXXXX) and the "no queued event" idiom used by sceUserServiceGetEvent
+// (ORBIS_USER_SERVICE_ERROR_NO_EVENT, userservice_error.h) and other Get*Event PS4 APIs:
+// OK when an event was dequeued, a distinct non-OK code otherwise. Used to stop
+// sceDeviceServiceGetEventState (currently only a generic aerolib stub, see
+// core/aerolib/stubs.cpp) from always reporting "event ready" and sending callers into a
+// tight poll loop. See GT7-NOTES.md for the investigation that led here.
+constexpr s32 ORBIS_DEVICE_SERVICE_ERROR_NO_EVENT = 0x809b0002;
