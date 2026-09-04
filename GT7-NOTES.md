@@ -963,3 +963,30 @@ correção, que fica ativa por bastante tempo sem crashar nem vazar memória —
 terminar dentro da janela que testei. Não sei ainda se essa tela eventualmente carrega
 (loading real e lento do GT7) ou se esconde outro travamento ainda não diagnosticado. Isso é
 o ponto exato onde a investigação para nesta sessão.
+
+## Achado o que provavelmente domina essa tela nova: loop de rede real, não um stub
+
+Com o usuário controlando o jogo (log completo capturado dessa vez), reproduzi a mesma tela
+de carregamento nova e encontrei o que parece ser a causa dominante: **68% de todo o log
+(77 mil de 112 mil linhas)** é um ciclo repetido de `sceNetEpollCreate` (name=`pdinetwork`)
+seguido de `sceNetEpollControl` (`ORBIS_NET_EPOLL_CTL_ADD`, ids 48/49/50 alternando). Isso é
+**código de rede de verdade implementado** (`net.cpp`), não um stub genérico — então o fix
+de throttle de hoje não se aplica aqui, e não dá pra "corrigir" só trocando um valor de
+retorno como fizemos com `sceDeviceServiceGetEventState`.
+
+Hipótese mais provável: é o próprio GT7 tentando reconectar no backend dele
+(`api.develop-stable.vegas.granturismo-online.net`, já documentado) repetidamente. O
+`resolver_overrides.json` (implementado hoje, mais cedo) faz essa tentativa falhar
+**rápido** (`ECONNREFUSED` quase instantâneo em vez do `SYN-SENT` demorado de antes) — o que
+pode ter, sem querer, acelerado a taxa de retry a ponto de virar esse loop apertado de
+`epoll`. Ou seja: **nosso próprio fix de hoje pode ter trocado um travamento lento e seguro
+por um retry rápido e barulhento** (memória continuou estável nos testes, só o volume de log
+ficou alto — 15MB em poucos minutos, não chegou a ser um problema de disco desta vez, mas é
+o mesmo padrão que já causou problema antes nesta sessão).
+
+**Não tentei corrigir isso** — mexer em código de rede real (não stub) tem risco maior de
+quebrar coisa que funciona pra outros jogos, e a causa raiz provável (sem servidor real pra
+responder) é exatamente o limite que já tínhamos mapeado e decidido não resolver (servidor
+falso = escopo de semanas, fronteira ética documentada acima). **Esse é provavelmente o
+verdadeiro fim da linha desta investigação**: não é mais bug do shadPS4 pra corrigir, é o
+jogo genuinamente preso esperando um servidor que não existe.
