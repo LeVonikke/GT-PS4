@@ -575,9 +575,7 @@ handshake, criptografia se houver). Sem uma captura de tráfego real de autênti
 é engenharia reversa de protocolo binário proprietário de uma empresa real, do zero, sem
 referência — escopo de semanas, não desta sessão. Também acharam-se ~160 mil linhas de log
 `sys_connect ... error code: 37 (EALREADY)` em segundos — o jogo fica re-chamando
-`connect()` sem esperar a tentativa anterior terminar, o que pode ser um bug real do
-tratamento de socket não-bloqueante do shadPS4 (não conclusivo ainda, não investigado a
-fundo).
+`connect()` sem esperar a tentativa anterior terminar.
 
 **Nota lateral sobre `/tmp`:** dois logs sem filtro (`gt7-devkit-test2.log` 3,6GB,
 `gt7-httplog.log` 1,9GB) encheram o tmpfs de `/tmp` (7,7G) a 81%, quebrando a saída de
@@ -585,6 +583,46 @@ qualquer comando neste shell até o usuário rodar `rm` nos arquivos pedidos. Ca
 esse loop de `sys_connect`/EALREADY gerando log em alta taxa sem limite de tamanho. Pra
 qualquer captura futura de log de rede do GT7, **usar `timeout` + filtro `grep --line-buffered`
 ao vivo** (não gravar a saída bruta inteira), como feito na segunda tentativa.
+
+### Investigação do loop EALREADY — NÃO é bug do shadPS4, e achou-se um fix mesmo assim
+
+Confirmado com `ss -tnp` durante uma tentativa real: os dois sockets ficam em **`SYN-SENT`**
+pra `18.178.102.7:443` e `54.249.170.74:443` — o SYN nunca recebe resposta (provavelmente um
+firewall da AWS descartando silenciosamente pacote de IP não autorizado, sem RST). Isso
+**não é bug do shadPS4** — é o estado correto de um `connect()` não-bloqueante numa rede que
+não responde. O "loop" de 160 mil `EALREADY`/segundo é o próprio código do GT7 rechamando
+`connect()` sem usar `epoll`/backoff enquanto o socket fica preso em limbo — comportamento
+do jogo, não nosso, e não dá (nem devia) pra "consertar" isso no código deles.
+
+**Mas isso sugeriu um fix de qualidade de vida real, sem tocar no servidor da Polyphony:**
+se a conexão falhar **rápido e definitivamente** (RST/`ECONNREFUSED`) em vez de ficar em
+`SYN-SENT` esperando o timeout da rede, o GT7 para de tentar imediatamente — porque o "loop"
+só existe enquanto o estado fica indefinido. Implementado um mecanismo de override de
+resolver **dentro do shadPS4** (não é `/etc/hosts`, não mexe no sistema, é só um arquivo de
+config do usuário — reversível e não toca em nada de terceiro):
+
+- Novo `~/.local/share/shadPS4/resolver_overrides.json` (ou
+  `$SHADPS4_RESOLVER_OVERRIDES_JSON`), formato `{"hostname": "ip_ou_hostname_alvo"}`.
+  Implementado em `src/core/libraries/network/net_util.cpp`
+  (`LoadResolverOverrideState`/`LookupResolverOverride`, chamado no início de
+  `ResolveHostname`), espelhando o `ApplyHostOverride` que já existia em `http.cpp` — só que
+  esse cobre **qualquer** resolução de hostname via `getaddrinfo`, incluindo sockets crus
+  como o `SimpleTcpClient` do GT7, que o `host_overrides.json` (HTTP-only) nunca alcançava.
+- Configurado localmente: `"api.develop-stable.vegas.granturismo-online.net": "127.0.0.1"`
+  — redireciona pro próprio localhost, onde nada escuta na porta 443, então o SO devolve
+  `ECONNREFUSED` quase na hora (RST local, sem round-trip de rede nenhum).
+- **Testado e confirmado**: antes, ~80 mil linhas de `EALREADY` por socket em menos de 90s
+  gravadas no log e o processo preso naquele estado o tempo todo. Depois do override,
+  **uma única linha** `sys_connect ... error code: 61 (ECONNREFUSED)` por socket, e o jogo
+  segue em frente pro mesmo diálogo `CE-210716` de sempre — só que quase instantâneo em vez
+  de travado por minutos. Nenhuma mudança de conteúdo/gameplay (o erro visível pro jogador é
+  idêntico, é esperado e honesto — só o caminho até ele ficou saudável).
+- Isso **não** é o servidor falso (não fizemos o GT7 aceitar nada, só fizemos a rejeição
+  chegar rápido) — mas é uma peça de infraestrutura reutilizável: se algum dia alguém montar
+  um servidor de verdade que fale o protocolo do `SimpleTcpClient`, é só trocar o `127.0.0.1`
+  nesse mesmo arquivo pelo endereço do servidor real, sem precisar de root nem mexer no SO.
+
+Commitado no fork (`net_util.cpp` + este texto).
 
 ## Build no Windows
 

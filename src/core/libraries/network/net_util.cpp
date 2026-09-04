@@ -31,19 +31,99 @@ typedef int net_socket;
 #include <sstream>
 #endif
 
+#include <cstdlib>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <vector>
+#include <sstream>
 #include <string.h>
+#include <unordered_map>
+#include <vector>
+#include <nlohmann/json.hpp>
 #include "common/assert.h"
 #include "common/logging/log.h"
+#include "common/path_util.h"
 #include "core/libraries/error_codes.h"
 #include "net.h"
 #include "net_error.h"
 #include "net_util.h"
 
 namespace NetUtil {
+
+// Resolver-level host override: like http.cpp's host_overrides.json, but for raw
+// getaddrinfo() calls (sceNetResolverStartNtoa and friends) - covers games that talk to
+// their own backend over a plain TCP socket instead of going through sceHttp (e.g. GT7's
+// "SimpleTcpClient", which never touches the HTTP override path at all). Format:
+// {"hostname": "ip.or.hostname.to.use.instead"}. Read once, from
+// $SHADPS4_RESOLVER_OVERRIDES_JSON if set, otherwise <user dir>/resolver_overrides.json.
+// A resolve target that isn't a bare IPv4 literal is resolved for real (one extra
+// getaddrinfo call) so the override value can itself be a hostname.
+struct ResolverOverrideState {
+    bool loaded = false;
+    std::unordered_map<std::string, std::string> entries;
+};
+
+static ResolverOverrideState LoadResolverOverrideState() {
+    ResolverOverrideState s;
+    s.loaded = true;
+    std::filesystem::path path;
+    if (const char* path_env = std::getenv("SHADPS4_RESOLVER_OVERRIDES_JSON");
+        path_env && path_env[0]) {
+        path = path_env;
+    } else {
+        path = Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "resolver_overrides.json";
+    }
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        return s;
+    }
+    std::stringstream buf;
+    buf << f.rdbuf();
+    try {
+        const auto root = nlohmann::json::parse(buf.str());
+        for (auto it = root.begin(); it != root.end(); ++it) {
+            if (!it.key().empty() && it.key().front() == '_') {
+                continue;
+            }
+            if (!it.value().is_string()) {
+                LOG_ERROR(Lib_Net, "resolver overrides JSON: value for '{}' is not a string",
+                          it.key());
+                continue;
+            }
+            s.entries.emplace(it.key(), it.value().get<std::string>());
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR(Lib_Net, "resolver overrides JSON: failed to parse {}: {}", path.string(),
+                  e.what());
+        return s;
+    }
+    LOG_INFO(Lib_Net, "loaded {} resolver override entries from {}", s.entries.size(),
+             path.string());
+    return s;
+}
+
+static const ResolverOverrideState& GetResolverOverrideState() {
+    static const ResolverOverrideState s = LoadResolverOverrideState();
+    return s;
+}
+
+// Returns true and fills `target` if `hostname` has an override configured.
+static bool LookupResolverOverride(const std::string& hostname, std::string& target) {
+    const auto& state = GetResolverOverrideState();
+    if (state.entries.empty()) {
+        return false;
+    }
+    auto it = state.entries.find(hostname);
+    if (it == state.entries.end()) {
+        it = state.entries.find("*");
+    }
+    if (it == state.entries.end()) {
+        return false;
+    }
+    target = it->second;
+    return true;
+}
 
 const std::array<u8, 6>& NetUtilInternal::GetEthernetAddr() const {
     return ether_address;
@@ -388,13 +468,20 @@ bool NetUtilInternal::RetrieveIp() {
 }
 
 int NetUtilInternal::ResolveHostname(const char* hostname, Libraries::Net::OrbisNetInAddr* addr) {
+    std::string effective_hostname = hostname;
+    std::string override_target;
+    if (LookupResolverOverride(hostname, override_target)) {
+        LOG_INFO(Lib_Net, "resolver override active: {} -> {}", hostname, override_target);
+        effective_hostname = override_target;
+    }
+
     const addrinfo hints = {
         .ai_flags = AI_V4MAPPED | AI_ADDRCONFIG,
         .ai_family = AF_INET,
     };
 
     addrinfo* info = nullptr;
-    auto gai_result = getaddrinfo(hostname, nullptr, &hints, &info);
+    auto gai_result = getaddrinfo(effective_hostname.c_str(), nullptr, &hints, &info);
 
     auto ret = ORBIS_OK;
     if (gai_result != 0) {
