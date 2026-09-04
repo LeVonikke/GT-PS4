@@ -837,15 +837,38 @@ static void SigIgnHandler(int sig) {
     LOG_DEBUG(Lib_Kernel, "called, sig: {}", sig);
 }
 
-static bool SigDflHandler(int sig) {
+static bool SigDflHandler(int sig, Ucontext* context) {
     switch (sig) {
     case POSIX_SIGBUS:
     case POSIX_SIGSEGV:
         return false;
+    case POSIX_SIGILL:
+        // Default action for SIGILL with no guest handler installed is to terminate just the
+        // guest process, not the whole emulator. Returning false here propagates all the way up
+        // to Core::SignalHandler's UNREACHABLE_MSG, which crashes shadPS4 itself instead of just
+        // the game. Log it loudly (this always means the guest hit an unhandled illegal
+        // instruction/trap, e.g. a deliberate `ud2` abort) and return true so the emulator
+        // survives - the guest thread's state past this point is unreliable, but at least the
+        // process (and any diagnosis) isn't lost with it.
+        //
+        // Returning "handled" alone isn't enough: the faulting instruction pointer is left
+        // exactly where it was, so execution would just re-fault on the same `ud2` forever (a
+        // tight, extremely fast SIGILL retry loop instead of a crash - confirmed empirically,
+        // ~1GB of log spam in under a minute). `ud2` is always exactly 2 bytes (0F 0B), so skip
+        // past it and sync the fixed-up RIP back to the real host context before returning -
+        // otherwise DispatchSignal's early return here bypasses the normal
+        // context->SyncHostFromGuest() it does for the custom-handler path.
+        LOG_ERROR(Lib_Kernel, "Unhandled guest SIGILL with no handler installed - suppressing "
+                               "to avoid crashing the emulator. Guest state past this point is "
+                               "unreliable.");
+        if (context) {
+            context->uc_mcontext.mc_rip += 2;
+            context->SyncHostFromGuest();
+        }
+        return true;
     case POSIX_SIGHUP:
     case POSIX_SIGINT:
     case POSIX_SIGQUIT:
-    case POSIX_SIGILL:
     case POSIX_SIGABRT:
     case POSIX_SIGEMT:
     case POSIX_SIGFPE:
@@ -1020,7 +1043,7 @@ bool Pthread::DispatchSignal(s32 sig, Siginfo* info, Ucontext* context) {
     }
 
     if (reinterpret_cast<uintptr_t>(handler) == POSIX_SIG_DFL) {
-        return SigDflHandler(sig);
+        return SigDflHandler(sig, context);
     }
 
     Sigset old_mask{};

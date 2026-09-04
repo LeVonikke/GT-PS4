@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GT Sport (CUSA02168, v01.00) crashes deterministically on the exposure-calibration screen
+  of the first boot with "TreeAllocator: node pool exhausted. can't continue." followed by a
+  deliberate ud2 abort. Reverse-engineered via Ghidra (gtsport-eboot-plain.elf, function
+  FUN_00b837d0, confirmed by cross-reference from the exact error string): the allocator has
+  a hard-coded cap of 0x81 (129) growth units before it gives up instead of growing further.
+
+    CMP RAX,0x81      ; at eboot-runtime address 0xf837ff (48 3D 81 00 00 00)
+    ja   <abort path> ; jumps to the ud2 trap if RAX > 0x80
+
+  This patch raises the cap from 0x81 to 0x2000 (8192, ~64x headroom) by overwriting the
+  4-byte immediate operand at 0xf83801 (0xf837ff + 2, past the REX.W + opcode bytes).
+  Untested whether this alone is sufficient for full stability - it removes this specific
+  abort path, not necessarily whatever upstream condition causes more growth than expected
+  under emulation.
+-->
+<Patch>
+    <Metadata Name="Raise TreeAllocator pool cap (0x81 -> 0x2000)" Author="local" AppVer="01.00" isEnabled="true">
+        <Lines>
+            <Line Type="bytes" Address="f83801" Value="00200000" />
+        </Lines>
+    </Metadata>
+</Patch>
