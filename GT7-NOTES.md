@@ -497,6 +497,41 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    frente. Alternativa que ainda não foi tentada: servidor falso específico do protocolo da
    Polyphony (nunca começado, escopo grande, ver seção acima).
 
+   **Update — forcei o Ghidra a criar função nos 3 endereços que ele tinha pulado**
+   (`disassemble()` + `createFunction()` manual num script novo, `ForceDecompile.java`,
+   reusando o projeto já salvo — não precisou reanalisar). Resultado **muda a conclusão de
+   forma importante:**
+
+   - `0x10ec0d7` (perto de `DebugFeatures`): **tem xref de entrada de verdade**, um `jne`
+     condicional vindo de `0x10ebfdc` — é um branch real de código, não indireto. Mas o
+     corpo decompilado é gigante (71.832 bytes só desse fragmento) e monta um structs cheio
+     de campos nomeados: `StartType`, `Difficulty`, `RaceLimitLaps`, `Entrymax`,
+     `WeatherID`, `CourseLabel`, `PlayerGrid`, `ProjectKey`, `PlayerCarClass`,
+     `OnlineGameMode`, `NatAvailable`, `updatedEntries`, `messages`... e cita literalmente
+     `GTParameter::GameParameterUtility::Options` e
+     `GTParameter::GameParameterValidator::InitializeResult` no meio do código. **Isso é
+     schema de parâmetro de sessão/corrida pra comunicação com o servidor** (matchmaking,
+     config de race), não um menu de UI.
+   - `0x236e0ba` (`CourseDebugMode`): corpo pequeno (596 bytes), mas também é claramente
+     construção de struct — um monte de floats (`0x3f800000` = 1.0f, `0x43960000` = 300.0f,
+     `0x42340000` = 45.0f, ...) ao lado do nome `CourseDebugMode`. Cara de parâmetro
+     numérico de configuração de pista/câmera de debug, não de flag booleana de UI.
+
+   **Conclusão revisada, com evidência de decompilação (não só suspeita):** as strings
+   `IsDebugVersion`/`DebugFeatures`/`CourseDebugMode`/etc. batem com o padrão
+   `N6PDISTD16PseudoReflection...` achado antes por `strings` — são **nomes de campo dentro
+   do sistema de reflexão/serialização interno da Polyphony** (`PDISTD` = provavelmente
+   "Polyphony Digital I/O Standard" ou similar), usado pra descrever parâmetros de
+   sessão/corrida trocados com o backend, não flags de UI que abrem um menu de debug local.
+   **A hipótese original — achar e virar um byte pra destravar um menu de debug — não se
+   sustenta mais com o que foi encontrado.** Não dá pra descartar 100% sem achar o
+   read-back de `IsDebugVersion()` especificamente (ela não apareceu como branch real nos
+   dois testes acima, só as outras duas), mas o padrão das outras duas jogou a probabilidade
+   pra baixo o suficiente pra não valer continuar cavando esse caminho sem um motivo novo.
+   **Recomendação: pausar a via de patch binário aqui.** As opções que sobram são as já
+   listadas (servidor falso da Polyphony, ou aceitar o Music Rally como único conteúdo
+   offline) — nenhuma delas foi tentada ainda nesta sessão.
+
 ## Build no Windows
 
 Dependências (ver `documents/building-windows.md` no repo): Visual Studio 2022 com C++ e
