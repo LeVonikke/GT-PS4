@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include "common/logging/log.h"
 #include "core/aerolib/aerolib.h"
@@ -19,13 +21,33 @@ namespace Core::AeroLib {
 
 constexpr u32 MAX_STUBS = 8192;
 
+// A stub is by definition unimplemented functionality returning a fixed value (0) - if the
+// game polls it in a loop waiting for that value to change (a real pattern seen with GT7:
+// hundreds of thousands of consecutive sceDeviceServiceGetEventState calls/sec, pinning a
+// CPU core at 100% while nothing else progresses), there is no way to "fix" that generically
+// without knowing the real semantics of each specific function. What we CAN do safely,
+// without touching behavior at all: cap how fast any one thread can hammer stubs, so a
+// runaway poll loop degrades into a bounded, sustainable spin instead of a 100%-CPU burn
+// that has repeatedly pushed this machine toward OOM this session. Only kicks in once a
+// thread has already made many rapid consecutive stub calls, so a normal one-off call to an
+// unimplemented function never pays for it.
+static thread_local u32 stub_call_counter = 0;
+
+static void ThrottleIfHot() {
+    if ((++stub_call_counter & 0x3F) == 0) {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+}
+
 u64 UnresolvedStub() {
     LOG_ERROR(Core, "Returning zero to {}", __builtin_return_address(0));
+    ThrottleIfHot();
     return 0;
 }
 
 static u64 UnknownStub() {
     LOG_ERROR(Core, "Returning zero to {}", __builtin_return_address(0));
+    ThrottleIfHot();
     return 0;
 }
 
@@ -41,6 +63,7 @@ static u64 CommonStub(int stub_index, void* addr) {
         LOG_ERROR(Core, "Stub: Unknown (nid: {}) called, returning zero to {}",
                   stub_nids_unknown[stub_index], addr);
     }
+    ThrottleIfHot();
     return 0;
 }
 

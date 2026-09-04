@@ -863,3 +863,25 @@ significa que **não dá pra confiar no endereço de retorno logado pra achar o 
 exato que faz a chamada**, em binários otimizados como esse. Path alternativo pra quem
 quiser ir fundo: procurar pelo NID/import slot em si (não pelo endereço de retorno) e
 seguir xrefs a partir dali no Ghidra interativo.
+
+## Implementado: throttle genérico no stub, pra impedir 100% de CPU num spin-loop
+
+Já que a correção "de verdade" do `sceDeviceServiceGetEventState` exige saber a semântica
+real da API (sem confirmação), implementei a mitigação defensiva que tinha ficado só como
+ideia: `src/core/aerolib/stubs.cpp` agora tem um contador `thread_local` por thread — a
+cada 64 chamadas consecutivas de **qualquer** stub (nomeado ou anônimo), dorme 200
+microssegundos antes de retornar. Só entra em ação depois de várias chamadas rápidas
+seguidas, então uma chamada avulsa a uma função não implementada não paga nada por isso.
+Não muda o valor de retorno (continua `0`) nem o comportamento visível pro jogo — só limita
+a taxa máxima de chamadas por segundo numa thread presa num loop, pra não fixar um núcleo a
+100% e gerar a pressão de CPU/memória que já causou instabilidade nesta sessão.
+
+**Teste**: reproduzi o cenário até a segunda tela do `CE-210716` de novo. Resultado: CPU
+ficou alto (pool de threads `Job#N`, provavelmente compilação de shader em paralelo — cara
+de trabalho real, não spin quebrado) mas **a memória ficou estável a sessão inteira**
+(oscilando entre 5,9 e 6,1GB disponível por 150s, sem tendência de queda), bem diferente do
+travamento anterior (que caiu de 6GB pra ~1GB ao longo de ~14 minutos). **Não consigo provar
+com certeza que foi o throttle** — essa rodada específica pode simplesmente não ter batido
+no mesmo loop de `sceDeviceServiceGetEventState` de antes (a intermitência já documentada).
+Mas o fix é seguro por construção (delay pequeno, só em código já não-implementado) e fica
+valendo como rede de segurança independente de resolver a causa raiz.
