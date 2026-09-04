@@ -885,3 +885,18 @@ com certeza que foi o throttle** — essa rodada específica pode simplesmente n
 no mesmo loop de `sceDeviceServiceGetEventState` de antes (a intermitência já documentada).
 Mas o fix é seguro por construção (delay pequeno, só em código já não-implementado) e fica
 valendo como rede de segurança independente de resolver a causa raiz.
+
+**Teste longo (15min monitorados, ~1h de runtime total):** deixei rodar de verdade dessa
+vez, em vez dos ~2min de antes. Bateu no `CE-210716` **5 vezes seguidas** nessa rodada
+específica (mais que o padrão de 2 já visto — confirma que a intermitência é real e não
+tem número fixo), dispensei todas, chegou na tela de loading e fiquei só observando por 15
+minutos direto, matando automaticamente se a memória caísse abaixo de 1,2GB. **Nunca chegou
+perto**: terminou o monitoramento em 4,93GB disponível, memória oscilou mas nunca caiu de
+forma consistente — bem diferente da queda constante do travamento original (de 6GB pra
+~1GB em 14min). Deixei o processo rodando mais um pouco depois — **chegou a quase 1 hora de
+runtime total, ainda estável**, antes de eu encerrar manualmente (não por necessidade, só
+pra fechar o teste). Isso é evidência bem mais forte que o teste anterior de que o throttle
+(ou simplesmente essa rodada não bater no loop exato de antes) mantém o sistema seguro por
+muito mais tempo do que o comportamento documentado como problemático. Ainda não é prova
+definitiva de causalidade, mas é o resultado mais tranquilizador desta investigação até
+agora.
