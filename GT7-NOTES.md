@@ -803,9 +803,10 @@ menos). Não consegui sair do loop dessa vez com `cross`/`up+cross` repetidos �
 comportamento intermitente já visto antes (às vezes cai no Music Rally depois de várias
 tentativas, às vezes não). Não é regressão, é o mesmo território conhecido.
 
-**Padrão confirmado pelo usuário controlando manualmente**: o diálogo `CE-210716` aparece
-**exatamente duas vezes seguidas**, e na segunda confirmação cai de volta na tela de
-carregamento (spinner do logo GT) — não é infinito, só precisa dispensar duas vezes. Nos
-testes automatizados eu não tinha contado com precisão quantas vezes tinha tentado; isso
-explica por que às vezes "funcionava" e às vezes parecia travado — dependia de quantos
-`cross` eu já tinha mandado antes de checar o estado.
+**Padrão confirmado**: o diálogo `CE-210716` aparece **exatamente duas vezes seguidas**, e
+na segunda confirmação cai de volta na tela de carregamento (spinner do logo GT) — não é
+infinito, só precisa dispensar duas vezes. `xdotool key KP_2` (numpad 2, mapeado pra cross)
+funciona de verdade — o que enganava antes era o `spectacle` tirando o screenshot rápido
+demais depois do `key`, antes do jogo processar o input e trocar de tela; a screenshot
+seguinte, um pouco mais tarde, já mostrava o avanço. Não é problema de mapeamento de tecla
+nem de foco de janela — é só timing entre o `key` e o `screenshot`.
