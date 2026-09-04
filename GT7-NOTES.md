@@ -741,3 +741,17 @@ foi pulado):**
 Rebuild completo com tudo junto (os 7 cherry-picks + os 4 fixes locais de hoje) — limpo,
 testado com o GT7 real (16 shaders compilados, zero crash, memória saudável). Tudo
 commitado e enviado pro `github` remote.
+
+## Ideia futura (não iniciada): recompilação estática de verdade
+
+Usuário perguntou sobre compilar o ELF do GT7 como executável nativo. PS4 é x86-64 (Jaguar)
+— mesma arquitetura do host, então o código de CPU do jogo já roda "nativo" hoje, sem
+tradução de ISA; o shadPS4 só traduz shader de GPU (GCN→SPIR-V) e reimplementa centenas de
+bibliotecas do sistema PS4 (`sceKernel*`, `libSceGnm`, etc. — nada disso existe no Linux
+puro). Recompilação estática de verdade (tipo Zelda64Recomp/N64Recomp — eliminar o shadPS4
+como camada de emulação em runtime) é diferente de só rodar sem tradução de CPU: aqueles
+projetos funcionam porque o jogo original já foi **decompilado por engenharia reversa
+comunitária ao longo de anos**, geralmente batendo quase 1:1 com o binário original. O GT7 é
+comercial fechado de 2022, sem código-fonte vazado, sem esse trabalho de decompilação feito
+por ninguém — fazer isso do zero é projeto de anos, não desta sessão. **Decisão do usuário:
+deixar registrado como ideia futura, não iniciar agora.**
