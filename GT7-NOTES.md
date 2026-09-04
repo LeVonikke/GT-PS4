@@ -755,3 +755,35 @@ comunitária ao longo de anos**, geralmente batendo quase 1:1 com o binário ori
 comercial fechado de 2022, sem código-fonte vazado, sem esse trabalho de decompilação feito
 por ninguém — fazer isso do zero é projeto de anos, não desta sessão. **Decisão do usuário:
 deixar registrado como ideia futura, não iniciar agora.**
+
+## Bug real achado e corrigido: `AeroLib::GetStub` sem cache, estourava o pool de 8192 slots
+
+Coletei os logs de import não resolvido (`UnknownStub`/`STUBBED`) de uma sessão de 60s e
+achei **69 ocorrências, todas caindo no fallback anônimo `UnknownStub()`** (`stubs.cpp:26`,
+"Returning zero to 0x..." sem nome nem NID nenhum) — zero linhas do formato normal
+`"Stub: {nome} (nid: ...) called..."`. Isso indicava que o pool fixo de `MAX_STUBS = 8192`
+slots (`src/core/aerolib/stubs.cpp`) já estava esgotado bem cedo no boot.
+
+Causa: `GetStub(nid)` **nunca fazia cache** — toda chamada consumia um slot novo do array,
+mesmo pedindo o mesmo NID já visto antes. GT7 carrega/relinka módulos dinamicamente bastante
+(replay, pistas, etc.), então o mesmo punhado de NIDs não resolvidos era pedido de novo a
+cada carregamento, drenando o pool com duplicatas — e depois de esgotado, **toda** função
+nova (mesmo as nunca vistas) cai no fallback anônimo sem nome, destruindo a
+capacidade de debug pro resto da sessão inteira.
+
+**Fix**: adicionado um `std::unordered_map<std::string, u64>` fazendo cache de NID →
+endereço do stub já atribuído, checado antes de consumir um slot novo (`src/core/aerolib/stubs.cpp`).
+Testado: **0 `UnknownStub` (era 69), 52 stubs nomeados corretamente** na mesma janela de
+45s. Nomes reais agora visíveis, incluindo vários relevantes pras investigações desta sessão:
+
+- `sceNpSessionSignalingCreateContext2`, `sceNpSessionSignalingInitialize`,
+  `sceNpSessionSignalingRequestPrepare` — sinalização de sessão NP, relacionado direto à
+  investigação de rede/servidor de ontem.
+- `sceBluetoothHidInit` — relevante pra pendência de pareamento do DualSense.
+- `sceKernelGetOpenPsId`, `sceDeviceServiceInitialize`,
+  `sceKernelGetSanitizerNewReplaceExternal`, `_sceKernelSetThreadAtexitCount` — kernel/device,
+  não investigados ainda.
+
+Sem regressão (build limpo, GT7 rodou 45s sem crash, memória saudável). Esse fix por si só
+já vale a pena manter mesmo que nada mais avance — sem ele, qualquer investigação futura de
+"o que falta implementar" fica cega depois que o pool esgota.

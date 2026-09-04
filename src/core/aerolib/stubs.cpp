@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <string>
+#include <unordered_map>
 #include "common/logging/log.h"
 #include "core/aerolib/aerolib.h"
 #include "core/aerolib/stubs.h"
@@ -55,7 +57,20 @@ consteval auto MakeStubArray(std::index_sequence<Is...>) {
 constexpr auto stub_handlers = MakeStubArray(std::make_index_sequence<MAX_STUBS>{});
 static u32 UsedStubEntries;
 
+// GetStub used to hand out a fresh slot from the fixed-size stub_handlers pool on EVERY
+// call, even for a nid it had already resolved before. Games that dynamically load/relink
+// the same modules more than once (GT7 does this heavily) burn through MAX_STUBS on
+// duplicate nids alone, so real, previously-unseen imports start silently falling into the
+// nameless UnknownStub() fallback (no nid, no name - just "Returning zero to <addr>") long
+// before the pool is actually full of *distinct* missing functions. Cache by nid so a
+// repeat request reuses the same slot/address instead of consuming a new one.
+static std::unordered_map<std::string, u64> nid_to_stub;
+
 u64 GetStub(const char* nid) {
+    if (const auto it = nid_to_stub.find(nid); it != nid_to_stub.end()) {
+        return it->second;
+    }
+
     if (UsedStubEntries >= MAX_STUBS) {
         return (u64)&UnknownStub;
     }
@@ -67,7 +82,9 @@ u64 GetStub(const char* nid) {
         stub_nids[UsedStubEntries] = entry;
     }
 
-    return (u64)stub_handlers[UsedStubEntries++];
+    const u64 stub_addr = (u64)stub_handlers[UsedStubEntries++];
+    nid_to_stub.emplace(nid, stub_addr);
+    return stub_addr;
 }
 
 } // namespace Core::AeroLib
