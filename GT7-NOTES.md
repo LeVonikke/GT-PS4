@@ -952,3 +952,14 @@ identificamos. Deixei um monitor de segurança rodando (mata se memória cair ab
 bem mais tempo (15min+) só pra ver se essa tela eventualmente resolve sozinha, ou investigar
 com o mesmo método de hoje (filtrar log por `Stub: ` com o fix de cache já aplicado) se tem
 outro `Get*Event*`/`Get*State*` fazendo o mesmo tipo de loop nessa fase mais adiante.
+
+Encerrei esse teste específico em ~11min nessa tela sem log capturado (rodada foi lançada
+sem pipe de log, então não deu pra diagnosticar mais sem reiniciar e perder o progresso já
+feito passando pelo `CE-210716`). Memória ficou saudável o tempo todo (encerrado por decisão,
+não por necessidade). **Resumo do estado real ao fim desta sessão**: o loop de
+`sceDeviceServiceGetEventState` está corrigido de verdade (confirmado com teste isolado); o
+jogo agora chega consistentemente numa tela de carregamento nova, nunca vista antes desta
+correção, que fica ativa por bastante tempo sem crashar nem vazar memória — mas também sem
+terminar dentro da janela que testei. Não sei ainda se essa tela eventualmente carrega
+(loading real e lento do GT7) ou se esconde outro travamento ainda não diagnosticado. Isso é
+o ponto exato onde a investigação para nesta sessão.
