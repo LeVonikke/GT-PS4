@@ -844,3 +844,22 @@ thread enquanto o jogo "trava" — não resolve o jogo, mas evita o hangup gerar
 memória/CPU que já derrubou o sistema mais de uma vez nesta sessão. Não implementei nenhuma
 das duas por incerteza sobre efeitos colaterais numa mudança tão global (afetaria todo NID
 de todo jogo, não só esse).
+
+**Correção importante (tentativa de ir mais fundo):** tentei usar o endereço de retorno
+logado (`0x35e6c01`) pra achar o código real do GT7 que chama essa função, primeiro à mão
+(desmontagem manual — descartada, comecei de um byte arbitrário e o x86 de tamanho variável
+saiu de sincronia) e depois via Ghidra (confiável, motor de desmontagem de verdade, projeto
+já analisado reaproveitado). **O Ghidra mostrou que esse endereço não é o call site de
+verdade** — cai no meio de uma função que é claramente manipulação de árvore rubro-negra
+(padrão de STL `std::map`/`std::set`, flag de cor no byte `+0x19`, recursão em par
+esquerda/direita), sem relação nenhuma com device service. Isso indica que o binário do GT7
+foi compilado com **tail-call optimization** — a função que de fato chama o stub foi
+otimizada pra `jmp` em vez de `call`+`ret` em algum ponto da cadeia, então
+`__builtin_return_address(0)` (usado pelo `stubs.cpp` do shadPS4 pra logar o "returning
+zero to 0x...") acaba mostrando o retorno de quem chamou um nível acima, não o call site
+real. **Isso não invalida o achado do loop** (a mesma NID sendo chamada em sequência sem
+nada no meio continua sendo um fato observado no log, independente de endereço) — só
+significa que **não dá pra confiar no endereço de retorno logado pra achar o código
+exato que faz a chamada**, em binários otimizados como esse. Path alternativo pra quem
+quiser ir fundo: procurar pelo NID/import slot em si (não pelo endereço de retorno) e
+seguir xrefs a partir dali no Ghidra interativo.
