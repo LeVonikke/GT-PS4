@@ -196,6 +196,7 @@ public:
     void V_MOV(const GcnInst& inst);
     void V_READFIRSTLANE_B32(const GcnInst& inst);
     void V_CVT_I32_F64(const GcnInst& inst);
+    void V_CVT_U32_F64(const GcnInst& inst);
     void V_CVT_F64_I32(const GcnInst& inst);
     void V_CVT_F64_U32(const GcnInst& inst);
     void V_CVT_F32_I32(const GcnInst& inst);

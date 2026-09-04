@@ -696,3 +696,10 @@ testado com o GT7 real por 45s: 14 shaders compilados com sucesso, zero `Unreach
 `Assertion Failed`, sem regressão. `V_SQRT_F64` e os demais ficam de fora — precisariam de
 trabalho no backend SPIR-V primeiro (`EmitFPSqrt64` não existe), fora do escopo de "só
 rotear o frontend".
+
+Achado mais um do mesmo padrão ao varrer `V_CVT_*_F64`: **`V_CVT_U32_F64`** — irmão de
+`V_CVT_I32_F64` (já implementado), só trocando `ir.ConvertFToS` por `ir.ConvertFToU`
+(`EmitConvertU32F64` já existe no backend). Implementado, testado de novo (15 shaders
+compilados, sem crash). Os outros `V_CVT_*_F64` do ISA (`V_CVT_F64_F32/I32/U32`) já estavam
+cobertos; `V_CVT_PKACCUM_U8_F32` fica de fora (não é conversão simples 1:1, é
+pack-accumulate — mais arriscado de espelhar às cegas sem verificar semântica exata).

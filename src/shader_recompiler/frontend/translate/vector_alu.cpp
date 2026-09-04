@@ -118,6 +118,8 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_READFIRSTLANE_B32(inst);
     case Opcode::V_CVT_I32_F64:
         return V_CVT_I32_F64(inst);
+    case Opcode::V_CVT_U32_F64:
+        return V_CVT_U32_F64(inst);
     case Opcode::V_CVT_F64_I32:
         return V_CVT_F64_I32(inst);
     case Opcode::V_CVT_F64_U32:
@@ -900,6 +902,11 @@ void Translator::V_MOV(const GcnInst& inst) {
 void Translator::V_CVT_I32_F64(const GcnInst& inst) {
     const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
     SetDst(inst.dst[0], ir.ConvertFToS(32, src0));
+}
+
+void Translator::V_CVT_U32_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    SetDst(inst.dst[0], ir.ConvertFToU(32, src0));
 }
 
 void Translator::V_CVT_F64_I32(const GcnInst& inst) {
