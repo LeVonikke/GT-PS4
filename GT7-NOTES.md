@@ -934,3 +934,21 @@ Primeiro fix desta sessão que ataca a causa raiz do travamento pós-`CE-210716`
 em vez de só documentar ou mitigar. Ainda não confirmei se isso sozinho permite chegar no
 Music Rally de verdade (não cheguei a testar até esse ponto, sessão compartilhada com outro
 trabalho na máquina — próxima sessão deveria tentar).
+
+**Update — testei além do `CE-210716` com o fix aplicado.** Passou pelo loop (dessa vez 4x
+seguidas, mais uma confirmação de que não tem número fixo) e foi pra uma tela de loading
+nova — apareceu inclusive um toast nunca visto antes ("WARNING! PS4 system fonts not found.
+Using bundled fallback fonts.") em algum boot anterior a esse loop, sinal de que o caminho
+de execução mudou. Fiquei ~9 minutos observando essa tela de loading sem sair dela. **Mas a
+assinatura de CPU é bem diferente do spin quebrado**: dezenas de threads `Job#N` fazendo
+~9,7% cada + duas threads (`SceLibc+`, `Job#0`) perto de 100% cada, acumulando minutos de
+CPU de verdade — não é um endereço só sendo martelado (esse padrão já foi visto antes num
+teste anterior desta sessão e não causou problema, memória ficou estável a hora inteira).
+Memória parou de cair e estabilizou em ~5,5GB depois de uns minutos. **Interpretação mais
+provável: carregamento genuíno e lento do GT7** (conhecido por isso até em hardware real),
+não outro loop quebrado — mas não é certeza, só não bate com a assinatura do bug que já
+identificamos. Deixei um monitor de segurança rodando (mata se memória cair abaixo de
+1,2GB) e segui documentando em paralelo. Próximo passo pra quem continuar: deixar rodar
+bem mais tempo (15min+) só pra ver se essa tela eventualmente resolve sozinha, ou investigar
+com o mesmo método de hoje (filtrar log por `Stub: ` com o fix de cache já aplicado) se tem
+outro `Get*Event*`/`Get*State*` fazendo o mesmo tipo de loop nessa fase mais adiante.
