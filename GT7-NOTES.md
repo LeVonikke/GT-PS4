@@ -650,4 +650,13 @@ diff gigante de CRLF em `.cpp`/`.h` sem eu ter mexido, é isso, não é incident
 
 Commits próprios até agora (2026-09-03): fix de crash de boot (memória liberada virando
 guard page), fix de vazamento de epoll, fix de tiling PRT, fix de assert de interpolação,
-ferramenta `--dump-elf`. Todos enviados pro `github` remote.
+ferramenta `--dump-elf`, override de resolver (`resolver_overrides.json`). Todos enviados
+pro `github` remote.
+
+**Busca por trabalho prévio da comunidade (2026-09-03):** nada publicado sobre
+`SimpleTcpClient` ou o protocolo do backend `vegas`/`granturismo-online.net`. O que existe
+de engenharia reversa pública do GT7 (Nenkai e outros) é sobre o protocolo **UDP de
+telemetria local** (`192.168.x.x`, usado por simuladores/motion rigs) — feature completamente
+diferente, já documentada e sem relação com a conexão remota que investigamos. Confirma:
+não há atalho/referência pública pra reverter o protocolo do backend real; servidor falso
+continua sendo trabalho do zero, de escopo grande, pausado por decisão já registrada acima.
