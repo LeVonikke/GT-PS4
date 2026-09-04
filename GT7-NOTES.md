@@ -532,6 +532,60 @@ Duas saídas possíveis, nenhuma tentada até o fim:
    listadas (servidor falso da Polyphony, ou aceitar o Music Rally como único conteúdo
    offline) — nenhuma delas foi tentada ainda nesta sessão.
 
+## Servidor falso — achei o hostname real, mas parei numa fronteira ética
+
+Pedido do usuário: investigar viabilidade de um servidor falso pro protocolo próprio da
+Polyphony (não o shadNet genérico), pra ver se destrava o CE-210716/Music-Rally-only.
+
+**O shadPS4 já tem infraestrutura pronta pra isso — `host_overrides.json`.** Existe desde o
+PR oficial "First ShadNet integration" (upstream, não fomos nós que criamos):
+`~/.local/share/shadPS4/host_overrides.json` (ou `$SHADPS4_HTTP_HOST_OVERRIDES_JSON`),
+formato `{"host:porta ou host ou scheme://host:porta ou *": "http(s)://novo_host:porta"}`,
+lido por `src/core/libraries/network/http.cpp` (`ApplyHostOverride`, ~linha 350). **Só que
+só vale pra requisições que passam pelo `sceHttp`** (a parte "PSN" via shadNet — friends,
+blocks, restriction status, tudo pra `srv.shadps4.net:31315`). Não cobre o que viria a
+seguir.
+
+**Achamos o hostname real do backend do próprio GT7** filtrando o log ao vivo por
+`Lib.Net`/`Lib.Http` (em vez de gravar o log inteiro — ver nota de rodapé sobre `/tmp`
+abaixo). GT7 abre socket cru (`sys_socketex: name = SimpleTcpClient`, TCP, não HTTP) e
+resolve via `sceNetResolverStartNtoa`:
+
+    hostname = api.develop-stable.vegas.granturismo-online.net
+
+Resolve de verdade em DNS público: `54.249.170.74` e `18.178.102.7`. Uma busca rápida achou
+inclusive `admin.develop-stable.vegas.granturismo-online.net` e
+`admin.preview3.vegas.granturismo-online.net` indexados — ou seja, **isso não é um hostname
+interno/fictício, é infraestrutura de desenvolvimento/staging de verdade da Polyphony**,
+publicamente resolvível (por engano ou não).
+
+**Parei aqui de propósito.** `host_overrides.json` não cobre esse socket cru (é HTTP-only),
+então cobrir essa conexão exigiria redirecionar via DNS (`/etc/hosts` local ou patch no
+resolver do shadPS4) pra um servidor **nosso**, não interagir com o servidor real deles. Eu
+não tentei conectar nos IPs acima nem abri o painel de admin — seria acessar infraestrutura
+de terceiro sem autorização, fora do escopo de "reverse engineering do meu próprio jogo
+rodando no meu emulador". O objetivo de um servidor falso é *substituir* essa conexão por
+uma nossa, nunca *sondar* a deles.
+
+**Onde isso deixa o projeto:** sabemos o hostname, sabemos que é um socket TCP cru chamado
+"SimpleTcpClient" (não é HTTP nem HTTP/2), não sabemos o protocolo de fio (framing,
+handshake, criptografia se houver). Sem uma captura de tráfego real de autêntico PS4↔servidor
+(que não temos — não há PS4 físico nesta sessão) ou documentação pública do protocolo
+"vegas"/"SimpleTcpClient", escrever um servidor falso que responda de forma que o GT7 aceite
+é engenharia reversa de protocolo binário proprietário de uma empresa real, do zero, sem
+referência — escopo de semanas, não desta sessão. Também acharam-se ~160 mil linhas de log
+`sys_connect ... error code: 37 (EALREADY)` em segundos — o jogo fica re-chamando
+`connect()` sem esperar a tentativa anterior terminar, o que pode ser um bug real do
+tratamento de socket não-bloqueante do shadPS4 (não conclusivo ainda, não investigado a
+fundo).
+
+**Nota lateral sobre `/tmp`:** dois logs sem filtro (`gt7-devkit-test2.log` 3,6GB,
+`gt7-httplog.log` 1,9GB) encheram o tmpfs de `/tmp` (7,7G) a 81%, quebrando a saída de
+qualquer comando neste shell até o usuário rodar `rm` nos arquivos pedidos. Causa: exatamente
+esse loop de `sys_connect`/EALREADY gerando log em alta taxa sem limite de tamanho. Pra
+qualquer captura futura de log de rede do GT7, **usar `timeout` + filtro `grep --line-buffered`
+ao vivo** (não gravar a saída bruta inteira), como feito na segunda tentativa.
+
 ## Build no Windows
 
 Dependências (ver `documents/building-windows.md` no repo): Visual Studio 2022 com C++ e
