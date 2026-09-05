@@ -32,19 +32,19 @@ SPDX-License-Identifier: GPL-2.0-or-later
 | :------------------------------------------------------------------------: | :------------------------------------------------------------------: |
 | ![Yakuza screenshot](./documents/Screenshots/3.png) | ![DRIVECLUB screenshot](./documents/Screenshots/4.png) |
 
-# Este fork
+# This fork
 
-![C++](https://img.shields.io/badge/C%2B%2B-blue) ![Status](https://img.shields.io/badge/status-ativo-brightgreen) ![Privado](https://img.shields.io/badge/-privado-grey) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+![C++](https://img.shields.io/badge/C%2B%2B-blue) ![Status](https://img.shields.io/badge/status-active-brightgreen) ![Private](https://img.shields.io/badge/-private-grey) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
 
-Fork pessoal do shadPS4 pra rodar jogos Gran Turismo específicos (cópias legais).
+Personal shadPS4 fork to run specific Gran Turismo games (legally owned copies).
 
-| branch | jogo | estado |
+| branch | game | state |
 |---|---|---|
-| `main` | Gran Turismo Sport (CUSA02168) | ativo — ver [`GT-SPORT-NOTES.md`](GT-SPORT-NOTES.md) |
-| `gt7` | Gran Turismo 7 (CUSA24767) | pausado, preservado no commit onde parou — ver [`GT7-NOTES.md`](GT7-NOTES.md) |
+| `main` | Gran Turismo Sport (CUSA02168) | active — see [`GT-SPORT-NOTES.md`](GT-SPORT-NOTES.md) |
+| `gt7` | Gran Turismo 7 (CUSA24767) | paused, preserved at the commit where it stopped — see [`GT7-NOTES.md`](GT7-NOTES.md) |
 
-`upstream` aponta pro [shadps4-emu/shadPS4](https://github.com/shadps4-emu/shadPS4) oficial,
-pra cherry-picks futuros.
+`upstream` points to the official [shadps4-emu/shadPS4](https://github.com/shadps4-emu/shadPS4),
+for future cherry-picks.
 
 # General information
 
