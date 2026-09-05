@@ -46,6 +46,19 @@ Personal shadPS4 fork to run specific Gran Turismo games (legally owned copies).
 `upstream` points to the official [shadps4-emu/shadPS4](https://github.com/shadps4-emu/shadPS4),
 for future cherry-picks.
 
+### What's ours in this fork (on top of stock shadPS4)
+
+| file/folder | content |
+|---|---|
+| `GT-SPORT-NOTES.md` | full session journal for the active branch (`main`) — the pivot from GT7, findings, crash root-causes, current blockers |
+| `GT7-NOTES.md` | journal for the paused `gt7` branch — kept for reference, not being worked on |
+| `patches/` | `MemoryPatcher`-format XML patches (offset+value), applied through shadPS4's own patch system rather than editing any EBOOT directly |
+| `rebuild-gt7.cmd` | convenience rebuild script from the GT7 era |
+| `src/core/libraries/kernel/threads/pthread.cpp` | our one code change so far: survives an unhandled guest `SIGILL` by advancing past the 2-byte `ud2` instead of infinite-refaulting |
+
+Everything else (`src/`, `cmake/`, `scripts/`, `tests/`, `documents/`) is stock shadPS4 —
+see the sections below for the upstream project itself.
+
 # General information
 
 **shadPS4** is an early **PlayStation 4** emulator for **Windows**, **Linux** and **macOS** written in C++.
