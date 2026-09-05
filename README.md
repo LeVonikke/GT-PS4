@@ -34,6 +34,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 
 # Este fork
 
+![C++](https://img.shields.io/badge/C%2B%2B-blue) ![Status](https://img.shields.io/badge/status-ativo-brightgreen) ![Privado](https://img.shields.io/badge/-privado-grey) ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+
 Fork pessoal do shadPS4 pra rodar jogos Gran Turismo específicos (cópias legais).
 
 | branch | jogo | estado |
